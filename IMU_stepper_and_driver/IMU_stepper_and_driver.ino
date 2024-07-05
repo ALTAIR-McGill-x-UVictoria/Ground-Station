@@ -1,8 +1,10 @@
 #include "IntervalTimer.h"
 
-//TODO: put actual pins
-#define DIR_PIN 99
-#define STEP_PIN 88
+//put actual pins
+#define DIR_PIN 2
+#define STEP_PIN 3
+#define SLEEP_PIN 4
+#define RESET_PIN 5
 
 #define STEPS_PER_REV 200
 
@@ -37,12 +39,17 @@ int stabilize_yaw();
 void setup() {
   pinMode(DIR_PIN, OUTPUT);
   pinMode(STEP_PIN, OUTPUT);
+  pinMode(RESET_PIN, OUTPUT);
+  pinMode(SLEEP_PIN, OUTPUT);
   Serial.begin(9600);
   if (!stepper_timer.begin(c_step_signal, 4)){ //triggers every 4 us
     Serial.println("Cannot begin timer. Exiting...");
     Serial.flush();
     exit(3);
   }
+  //Disables sleep and reset
+  digitalWrite(RESET_PIN, HIGH);
+  digitalWrite(SLEEP_PIN, HIGH);
 }
 
 void loop() {
