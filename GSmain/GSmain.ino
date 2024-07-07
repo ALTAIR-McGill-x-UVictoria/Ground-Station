@@ -184,8 +184,8 @@ void radioRx(){
     if(!queue.isEmpty()){
     data = queue.dequeue();
     } else {data = "0,000.00";}
-    char* tosend = data.c_str(); //no idea if this works
-    rf95.send(tosend, sizeof(data));
+    const char* tosend = data.c_str(); //no idea if this works
+    rf95.send((uint8_t *)tosend, sizeof(data));
     rf95.waitPacketSent();
     // Serial.println("Sent a reply");
     digitalWrite(LED_BUILTIN, LOW);
@@ -330,5 +330,6 @@ String commandParser(){
         return dat;
         
     }
+    return "0,000.00";
 
 }
