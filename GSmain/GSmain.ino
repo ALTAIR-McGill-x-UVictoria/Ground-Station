@@ -72,8 +72,21 @@ void loop() {
 
   */
 
+  // radioRx();
+
   recvCommand();
   commandPacket = commandParser();
+  queue.enqueue(commandPacket);
+
+  // if(queue.isEmpty() != 1){
+  //   String temp = queue.getHead();
+  //   // Serial.println(queue.getHead());
+  //   if(temp[0] == "0"){//opposite
+  //     // Serial.print("Command: "); Serial.println(queue.dequeue());
+  //     radioRx();
+  //   }
+  // }
+  radioRx();
 
   // fullSensorLoop();
   // radioTx("packet");
