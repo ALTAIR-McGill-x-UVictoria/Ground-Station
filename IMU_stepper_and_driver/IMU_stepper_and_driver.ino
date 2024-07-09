@@ -5,6 +5,7 @@
 #define STEP_PIN 3
 #define SLEEP_PIN 4
 #define RESET_PIN 5
+#define FAULT_PIN 6
 
 #define STEPS_PER_REV 200
 
@@ -26,6 +27,9 @@ float payload_yaw = 0; //TODO This should be constantly updated with data from i
 float beacon_yaw = 0;
 bool toggle_yaw_stabilization = false;
 
+#define LED_PIN 13
+bool led_state = false;
+
 int set_dir(bool dir);
 int turn_steps(float steps);
 int turn_degrees(float degrees);
@@ -41,7 +45,10 @@ void setup() {
   pinMode(STEP_PIN, OUTPUT);
   pinMode(RESET_PIN, OUTPUT);
   pinMode(SLEEP_PIN, OUTPUT);
-  Serial.begin(9600);
+  pinMode(FAULT_PIN, INPUT);
+
+  pinMode(LED_PIN, OUTPUT);
+
   if (!stepper_timer.begin(c_step_signal, 4)){ //triggers every 4 us
     Serial.println("Cannot begin timer. Exiting...");
     Serial.flush();
@@ -50,9 +57,25 @@ void setup() {
   //Disables sleep and reset
   digitalWrite(RESET_PIN, HIGH);
   digitalWrite(SLEEP_PIN, HIGH);
+
+  //Motor starts low
+  digitalWrite(DIR_PIN, LOW);
+  digitalWrite(STEP_PIN, LOW);
+
+  Serial.println("Done setup");
+  Serial.flush();
 }
 
 void loop() {
+
+  //digitalWrite(LED_PIN, !led_state);
+  //led_state = !led_state;
+
+  if (!digitalRead(FAULT_PIN)) {
+    Serial.println("Fault pin low: error. Exiting...");
+    Serial.flush();
+    exit(4);
+  }
 
   //Remove lock when rotation is achieved
   if (!steps_left) step_lock = false; 
@@ -122,6 +145,7 @@ int set_dir(bool dir) {
 //Callback function used by timer interrupt. 
 void c_step_signal() {
   if (steps_left > 0) {
+    Serial.println("Writing HIGH");
     digitalWrite(STEP_PIN, HIGH);
     delayNanoseconds(1900);
     digitalWrite(STEP_PIN, LOW);
@@ -177,10 +201,10 @@ int init_yaw_stabilization() {
   beacon_yaw = payload_yaw;
   return 0;
 }
-int stabilize_yaw(){ //Incomplete
+int stabilize_yaw(){ //Incomplete !!!
   float delta_angle = beacon_yaw - payload_yaw;
   turn_degrees(delta_angle);
-  beacon_yaw += delta_angle 
+  beacon_yaw += delta_angle;
 
   return 0;
 }
