@@ -9,7 +9,7 @@
 #include <RH_RF95.h>
 #include "Waveshare_10Dof-D.h"
 
-#define DEBUG_RX 1
+#define DEBUG_RX 0
 #define LOOP_TIMER 1000
 
 #define QUEUE_SIZE 10
@@ -88,6 +88,8 @@ void loop() {
   // queue.enqueue(commandPacket);
 
   // Serial.print("In queue: "); Serial.println(queue.itemCount()); //currently queue is not actually in use, since commands parsed through serial once per loop
+
+  
 
   if(DEBUG_RX == 1){
     if (sendTimer >= LOOP_TIMER){
@@ -226,7 +228,7 @@ void radioRx(){
     digitalWrite(LED_BUILTIN, LOW);
     } 
   else {
-    Serial.println("Receive failed");
+    // Serial.println("Receive failed");
   }
   
 
@@ -246,7 +248,7 @@ void recvCommand() {
     while (Serial.available() > 0 && newData == false) {
         rc = Serial.read();
 
-        // if (recvInProgress == true) {
+        // if (recvIfnProgress == true) {
             if (rc != endMarker) {
                 receivedChars[ndx] = rc;
                 ndx++;
@@ -341,7 +343,7 @@ String commandParser(){
         }
         else if(strcmp(messageFromPC,"ledon") == 0){
           // code = 2;
-          floatFromPC = fmodf(floatFromPC, 10.0f);
+          floatFromPC = fmodf(floatFromPC, 100.00f);
           dat = "2," + (String) floatFromPC;
           queue.enqueue(dat);
           dat.c_str();
@@ -398,4 +400,9 @@ String commandParser(){
         
     }
 
+}
+
+void groundpacketParser(String receivedPacket){
+
+  ;
 }
