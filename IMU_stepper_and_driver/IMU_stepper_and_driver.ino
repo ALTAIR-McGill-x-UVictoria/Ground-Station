@@ -24,7 +24,7 @@ int steps_left = 0;
 bool step_lock = false;
 
 float payload_yaw = 0; //TODO This should be constantly updated with data from imu. Place holder for now
-float beacon_yaw = 0;
+float last_payload_yaw = 0;
 bool toggle_yaw_stabilization = false;
 
 #define LED_PIN 13
@@ -201,10 +201,9 @@ int init_yaw_stabilization() {
   beacon_yaw = payload_yaw;
   return 0;
 }
-int stabilize_yaw(){ //Incomplete !!!
-  float delta_angle = beacon_yaw - payload_yaw;
+int stabilize_yaw(){ 
+  float delta_angle = last_payload_yaw - payload_yaw;
   turn_degrees(delta_angle);
-  beacon_yaw += delta_angle;
 
   return 0;
 }
