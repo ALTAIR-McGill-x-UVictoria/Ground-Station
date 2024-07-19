@@ -1,4 +1,4 @@
-#include "IntervalTimer.h"
+#include <Bonezegei_DRV8825.h>
 
 //put actual pins
 #define DIR_PIN 2
@@ -14,10 +14,11 @@
 #define CW 0
 #define CCW 1
 
+
 #define USER 0
 #define SYS 1
 
-IntervalTimer stepper_timer;
+Bonezegei_DRV8825 stepper(DIR_PIN, STEP_PIN);
 
 int speed = 80;
 
@@ -44,6 +45,8 @@ int stabilize_yaw();
 
 //Set pins, start serial and start timer interrupt
 void setup() {
+  Serial.begin(9600);
+
   pinMode(DIR_PIN, OUTPUT);
   pinMode(STEP_PIN, OUTPUT);
   pinMode(RESET_PIN, OUTPUT);
@@ -52,11 +55,8 @@ void setup() {
 
   pinMode(LED_PIN, OUTPUT);
 
-  if (!stepper_timer.begin(c_step_signal, 4)){ //triggers every 4 us
-    Serial.println("Cannot begin timer. Exiting...");
-    Serial.flush();
-    exit(3);
-  }
+  stepper.begin();
+
   //Disables sleep and reset
   digitalWrite(RESET_PIN, HIGH);
   digitalWrite(SLEEP_PIN, HIGH);
@@ -71,17 +71,21 @@ void setup() {
 
 void loop() {
 
-  //digitalWrite(LED_PIN, !led_state);
-  //led_state = !led_state;
+  payload_yaw += 0.001;
 
   if (!digitalRead(FAULT_PIN)) {
     Serial.println("Fault pin low: error. Exiting...");
     Serial.flush();
     exit(4);
   }
-
+  
   //Remove lock when rotation is achieved
   if (!steps_left) step_lock = false; 
+  //Else, turn 
+  else { 
+    stepper.step(curr_dir, steps_left);
+    steps_left = 0;
+  }
 
   if (toggle_yaw_stabilization && !step_lock){
     stabilize_yaw();
@@ -104,6 +108,8 @@ void loop() {
         break;
     }
   }
+
+  last_payload_yaw = payload_yaw;
 }
 
 int handle_command(String command){
@@ -140,17 +146,6 @@ int set_dir(bool dir) {
   digitalWrite(DIR_PIN, dir);
   curr_dir = dir;
   return 0;
-}
-
-//Callback function used by timer interrupt. 
-void c_step_signal() {
-  if (steps_left > 0) {
-    Serial.println("Writing HIGH");
-    digitalWrite(STEP_PIN, HIGH);
-    delayNanoseconds(1900);
-    digitalWrite(STEP_PIN, LOW);
-    steps_left -= 1;
-  }
 }
 
 //Turn by X.x steps. The non-integer part is accumulated in "partial_steps"
@@ -214,6 +209,7 @@ int turn_led(bool dir, bool user_sys) {
 
 int stabilize_yaw(){ 
   float delta_angle = last_payload_yaw - payload_yaw;
+  //Serial.println(delta_angle);
   turn_degrees(delta_angle, SYS);
 
   return 0;
