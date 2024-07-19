@@ -14,6 +14,9 @@
 #define CW 0
 #define CCW 1
 
+#define USER 0
+#define SYS 1
+
 IntervalTimer stepper_timer;
 
 int speed = 80;
@@ -31,9 +34,9 @@ bool toggle_yaw_stabilization = false;
 bool led_state = false;
 
 int set_dir(bool dir);
-int turn_steps(float steps);
-int turn_degrees(float degrees);
-int turn_led(bool dir);
+int turn_steps(float steps, bool user_sys);
+int turn_degrees(float degrees, bool user_sys);
+int turn_led(bool dir, bool user_sys);
 void c_step_signal();
 int handle_command(String command);
 int init_yaw_stabilization();
@@ -80,7 +83,7 @@ void loop() {
   //Remove lock when rotation is achieved
   if (!steps_left) step_lock = false; 
 
-  if (toggle_yaw_stabilization){
+  if (toggle_yaw_stabilization && !step_lock){
     stabilize_yaw();
   }
 
@@ -94,7 +97,7 @@ void loop() {
         Serial.println("Executing Command");
         break;
       case -1:
-        Serial.println("Error: Motor is locked.");
+        Serial.println("Error: Motor is locked because it is turning.");
         break;
       case -2:
         Serial.println("Error: Command Unrecognized.");
@@ -110,23 +113,20 @@ int handle_command(String command){
 
   if (command.startsWith("step ")) {//i.e. "step 100"
     float steps = command.substring(5).toFloat();
-    error = turn_steps(steps);
+    error = turn_steps(steps, USER);
   } 
   else if (command.startsWith("degree ")) {//i.e. "degree -90"
     float degrees = command.substring(7).toFloat();
-    error = turn_degrees(degrees);
+    error = turn_degrees(degrees, USER);
   }
   else if (command.startsWith("led ")) {//i.e. "led CCW"
     String led_dir = command.substring(4);
-    if (led_dir.startsWith("CW")){ error = turn_led(CW); }
-    if (led_dir.startsWith("CCW")){ error = turn_led(CCW); }
+    if (led_dir.startsWith("CW")){ error = turn_led(CW, USER); }
+    if (led_dir.startsWith("CCW")){ error = turn_led(CCW, USER); }
   }
   else if (command.startsWith("toggle yaw")) {//i.e. "toggle yaw"
-    if (toggle_yaw_stabilization) {toggle_yaw_stabilization = false;}
-    else if (!toggle_yaw_stabilization) {
-      error = init_yaw_stabilization();
-      if (!error) { toggle_yaw_stabilization = true; }
-    }
+    if (toggle_yaw_stabilization) {toggle_yaw_stabilization = false; }
+    else if (!toggle_yaw_stabilization) { toggle_yaw_stabilization = true; }
   }
   else {
     error = -2;
@@ -156,13 +156,28 @@ void c_step_signal() {
 //Turn by X.x steps. The non-integer part is accumulated in "partial_steps"
 //When partial_steps reaches an integer, the motor position is corrected by adding the accumulated error
 //A CW then CCW rotation will cancel the error, hence why we need to add/substract based on direction
-int turn_steps(float steps) {
+int turn_steps(float steps, bool user_sys) {
 
-  //TODO Update angle
-  //imu_yaw = update_imu_yaw();
+  if (steps == 0) {return 0;}
+
+  //Allows the user to rotate even when stabilizing (Changing the target angle)    //TODO What to do for partial steps?
+  if (toggle_yaw_stabilization && user_sys == USER) {
+    
+    //Motor Direction and User rotation in same direction 
+    if ( (steps < 0 && curr_dir == CCW)   ||   (steps>0 && curr_dir == CW) ){
+      steps_left += abs(steps);
+    }
+    //In different direction
+    else {
+      steps_left = abs(steps) - steps_left;
+      set_dir(!curr_dir);
+    }
+
+    return 0;
+  }
 
   //Ignore command if motor already turning
-  if (step_lock) return -1;
+  if (step_lock) {return -1;}
 
   //Select direction based on sign
   bool dir = (steps>0) ? CW : CCW;
@@ -184,26 +199,22 @@ int turn_steps(float steps) {
 }
 
 //Turn by X.x degrees. Positive is CW, Negative is CCW
-int turn_degrees(float degrees) {
+int turn_degrees(float degrees, bool user_sys) {
   float steps = (degrees / 360) * STEPS_PER_REV;
-  return turn_steps(steps);
+  return turn_steps(steps, user_sys);
 }
 
 //Go to previous or next LED
-int turn_led(bool dir) {
+int turn_led(bool dir, bool user_sys) {
   float steps = (STEPS_PER_REV / NUM_LEDS);
   if (dir == CCW) steps *= -1;
 
-  return turn_steps(steps);
+  return turn_steps(steps, user_sys);
 }
 
-int init_yaw_stabilization() {
-  beacon_yaw = payload_yaw;
-  return 0;
-}
 int stabilize_yaw(){ 
   float delta_angle = last_payload_yaw - payload_yaw;
-  turn_degrees(delta_angle);
+  turn_degrees(delta_angle, SYS);
 
   return 0;
 }
