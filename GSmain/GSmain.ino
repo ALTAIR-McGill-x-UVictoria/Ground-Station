@@ -1,5 +1,5 @@
+//Ground Station Main
 
-//Flight Computer Main
 
 // #include <RadioLib.h>
 #include <ArduinoQueue.h>
@@ -9,24 +9,35 @@
 #include <RH_RF95.h>
 #include "Waveshare_10Dof-D.h"
 
-#define DEBUG_RX 0
-#define LOOP_TIMER 1000
+//Callsign
+#define CALLSIGN "VA2ETD"
+#define SHOW_CALLSIGN 0 //will show callsign in serial monitor
 
+//Radio debugging without FC
+#define DEBUG_RX 0
+#define LOOP_TIMER 1000 
+
+//Queue
 #define QUEUE_SIZE 10
 
-ArduinoQueue<String> queue(QUEUE_SIZE);
-
-// bool gbSenserConnectState = false;
-
+//Radio pin definitions
 #define RFM95_RST 5
 #define RFM95_CS 10
 #define RFM95_INT 4
 
-// Change to 434.0 or other frequency, must match RX's freq!
+//LoRa parameters definitions
 #define RF95_FREQ 433.0
+#define SF 8
+#define BW 125000
+#define TX_POWER 20
 
-// Singleton instance of the radio driver
+//Show the raw packet received from FC instead of being parsed
+#define SHOW_AS_RAW_PACKET 1
+
+
+// Singleton instances
 RH_RF95 rf95(RFM95_CS, RFM95_INT);
+ArduinoQueue<String> queue(QUEUE_SIZE);
 
 IMU_ST_ANGLES_DATA stAngles;
 IMU_ST_SENSOR_DATA stGyroRawData;
@@ -48,66 +59,38 @@ String commandPacket;
 
 boolean newData = false;
 
-elapsedMillis sendTimer;
+// elapsedMillis sendTimer;
 
 void setup() {
 
-  // radio = new RadioLogic();
-  // rf95 = radio.rf95
-
   Serial.begin(115200);
   while (!Serial && (millis() < 3000));
-  
-  // pinMode(13,OUTPUT);
-  // digitalWrite(13, HIGH);
 
-  // Serial.begin(115200);
-  Serial.println("Initializing");
   radioSetup();
-  
 
-  Serial.println("Running main loop");
+  Serial.println("System init complete");
 
   
 }
 
-void loop() {
-  /*
-  Radio logic loop:
-  1 - FC starts in transmit mode, GS starts in receive mode
-  2 - FC transmits one (or more) packet(s), flags last packet with set to receive, switch to receive and waits x ms
-  3 - GS receives packet with flag, switch to transmit send command then switch back to receive
-  4 - If FC receives packet confirmation (code >= 0), instantly switch to transmit (back to step 2), else if no packet reception for duration of wait switch back to step 2
+void loop() {  
 
-  */
+  // if(DEBUG_RX == 1){
+  //   if (sendTimer >= LOOP_TIMER){
+  //     recvCommand();
+  //     commandPacket = commandParser();
+  //     radioRx();
+  //     sendTimer = 0;
+  //   }
+  // } else{
+  //   recvCommand();
+  //   commandPacket = commandParser();
+  //   radioRx();
+  // }
 
-  
-  
-  
-  // Serial.println(commandPacket);
-  // queue.enqueue(commandPacket);
-
-  // Serial.print("In queue: "); Serial.println(queue.itemCount()); //currently queue is not actually in use, since commands parsed through serial once per loop
-
-  
-
-  if(DEBUG_RX == 1){
-    if (sendTimer >= LOOP_TIMER){
-      recvCommand();
-      commandPacket = commandParser();
-      radioRx();
-      sendTimer = 0;
-    }
-  } else{
-    recvCommand();
-    commandPacket = commandParser();
-    radioRx();
-  }
-  
-  
-  //ON BATTERY POWER REMOVE ALL SERIAL FUNCTIONS
-  
-  // delay(1500);
+  recvCommand();
+  commandPacket = commandParser();
+  radioRx();
 }
 
 
@@ -117,11 +100,9 @@ void radioSetup(){
   pinMode(RFM95_RST, OUTPUT);
   digitalWrite(RFM95_RST, HIGH);
 
-  Serial.begin(115200);
+  // Serial.begin(115200);
   while (!Serial) delay(1);
   delay(100);
-
-  Serial.println("Feather LoRa TX Test!");
 
   // manual reset
   digitalWrite(RFM95_RST, LOW);
@@ -131,7 +112,6 @@ void radioSetup(){
 
   while (!rf95.init()) {
     Serial.println("LoRa radio init failed");
-    Serial.println("Uncomment '#define SERIAL_DEBUG' in RH_RF95.cpp for detailed debug info");
     while (1);
   }
   Serial.println("LoRa radio init OK!");
@@ -148,46 +128,14 @@ void radioSetup(){
   // The default transmitter power is 13dBm, using PA_BOOST.
   // If you are using RFM95/96/97/98 modules which uses the PA_BOOST transmitter pin, then
   // you can set transmitter powers from 5 to 23 dBm:
-  rf95.setTxPower(20, false);
+  rf95.setSignalBandwidth(BW);
+  // rf95.setCodingRate4(5);
+  rf95.setSpreadingFactor(SF);
+  rf95.setTxPower(TX_POWER, false);
+
 
 }
 
-void radioTx(char radiopacket[20]){
-
-  // delay(1000); // Wait 1 second between transmits, could also 'sleep' here!
-  Serial.println("Transmitting..."); // Send a message to rf95_server
-
-  // char radiopacket[20] = "Hello World";
-  // itoa(packetnum++, radiopacket+13, 10);
-  // Serial.print("Sending "); Serial.println(radiopacket);
-  // radiopacket[19] = 0;
-
-  Serial.println("Sending...");
-  // delay(10);
-  rf95.send((uint8_t *)radiopacket, 20);
-
-  Serial.println("Waiting for packet to complete...");
-  // delay(10);
-  rf95.waitPacketSent();
-  // Now wait for a reply
-  uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
-  uint8_t len = sizeof(buf);
-
-  // Serial.println("Waiting for reply...");
-  if (rf95.waitAvailableTimeout(1000)) {
-    // Should be a reply message for us now
-    if (rf95.recv(buf, &len)) {
-      // Serial.print("Got reply: ");
-      Serial.println((char*)buf);
-      Serial.print("RSSI: ");
-      Serial.println(rf95.lastRssi(), DEC);
-    } else {
-      Serial.println("Receive failed");
-    }
-  } else {
-    Serial.println("No reply, is there a listener around?");
-  }
-}
 
 void radioRx(){
   if (rf95.available() || DEBUG_RX) {
@@ -198,7 +146,6 @@ void radioRx(){
     if(DEBUG_RX){
       char debugMessage[] = "DEBUG PACKET";
       strcpy(buf, debugMessage);
-      // buf = (uint8_t*) debugMessage;
     }
 
     uint8_t len = sizeof(buf);
@@ -206,11 +153,15 @@ void radioRx(){
     if (rf95.recv(buf, &len) || DEBUG_RX) {
       digitalWrite(LED_BUILTIN, HIGH);
       // RH_RF95::printBuffer("Received: ", buf, len);
-      Serial.print("Got: ");
-      Serial.println((char*)buf);
+
+      if(SHOW_AS_RAW_PACKET == 1){
+        Serial.println((char*)buf);
+      } else{
+        groundpacketParser((char*) buf);
+      }
       Serial.print("RSSI: ");
-      Serial.println(rf95.lastRssi(), DEC);
-      Serial.print("SNR: ");
+      Serial.print(rf95.lastRssi(), DEC);
+      Serial.print(", SNR: ");
       Serial.println(rf95.lastSNR(), DEC);
     }
 
@@ -221,8 +172,10 @@ void radioRx(){
     if(queue.isEmpty() != 1){
     data = queue.dequeue();
     } else {data = "0,000.00";}
+    String callsgn = CALLSIGN;
+    data = callsgn + ":" + data;
     const char* tosend = data.c_str(); //no idea if this works
-    rf95.send((uint8_t *)tosend, sizeof(data));
+    rf95.send((uint8_t *)tosend, 20);
     rf95.waitPacketSent();
     // Serial.println("Sent a reply");
     digitalWrite(LED_BUILTIN, LOW);
@@ -237,44 +190,34 @@ void radioRx(){
 void recvCommand() {
     static boolean recvInProgress = false;
     static byte ndx = 0;
-    // char startMarker = '<';
     char endMarker = '\n';
     char rc;
 
-    // if(Serial.available() > 0){
-    //   recvInProgress = true;
-    // }
 
     while (Serial.available() > 0 && newData == false) {
-        rc = Serial.read();
+      rc = Serial.read();
 
-        // if (recvIfnProgress == true) {
-            if (rc != endMarker) {
-                receivedChars[ndx] = rc;
-                ndx++;
-                if (ndx >= numChars) {
-                    ndx = numChars - 1;
-                }
-            }
-            else {
-                receivedChars[ndx] = '\0'; // terminate the string
-                recvInProgress = false;
-                ndx = 0;
-                newData = true;
-            }
-        // }
-
-        // else if () {
-        //     recvInProgress = true;
-        // }
-    }
+      if (rc != endMarker) {
+        receivedChars[ndx] = rc;
+        ndx++;
+        if (ndx >= numChars) {
+          ndx = numChars - 1;
+        }
+      }
+      else {
+        receivedChars[ndx] = '\0'; // terminate the string
+        recvInProgress = false;
+        ndx = 0;
+        newData = true;
+      }
+  }
 }
 
 //============
 
 void parseData() {
 
-      // split the data into its parts
+  // split the data into its parts
     char * strtokIndx; // this is used by strtok() as an index
 
     strtokIndx = strtok(tempChars," ");      // get the first part - the string
@@ -302,31 +245,13 @@ void parseData() {
 
 //============
 
-void showParsedData() {
-    Serial.print("Command: ");
-    Serial.print(messageFromPC);
-    Serial.print(", FloatArg: ");
-    Serial.print(floatFromPC);
-    Serial.print(", IntArg ");
-    Serial.print(integerFromPC);
-    Serial.println();
-}
 
 String commandParser(){
   if (newData == true) { 
         strcpy(tempChars, receivedChars);
-            // this temporary copy is necessary to protect the original data
-            //   because strtok() replaces the commas with \0
-        // Serial.print(Serial.available()); Serial.print(": "); Serial.println(receivedChars);
-        // if(Serial.available() > 0){
-        //   while(1);
-        // }
-        // Serial.println(tempChars);
 
         parseData();
-        // showParsedData();
-        
-        // int code = 0;
+
         String dat = "0,000.00";
 
         if(strcmp(messageFromPC,"0") == 0){
@@ -341,19 +266,39 @@ String commandParser(){
           Serial.println("pong");
           
         }
-        else if(strcmp(messageFromPC,"ledon") == 0){
+        else if(strcmp(messageFromPC,"led1") == 0){
           // code = 2;
           floatFromPC = fmodf(floatFromPC, 100.00f);
           dat = "2," + (String) floatFromPC;
           queue.enqueue(dat);
           dat.c_str();
           Serial.print(dat); Serial.print(": ");
-          Serial.print("LED on, intensity: "); Serial.println(floatFromPC);
+          Serial.print("LED 1 on, intensity: "); Serial.println(floatFromPC);
+          
+        }
+        else if(strcmp(messageFromPC,"led2") == 0){
+          // code = 2;
+          floatFromPC = fmodf(floatFromPC, 100.00f);
+          dat = "3," + (String) floatFromPC;
+          queue.enqueue(dat);
+          dat.c_str();
+          Serial.print(dat); Serial.print(": ");
+          Serial.print("LED 2 on, intensity: "); Serial.println(floatFromPC);
+          
+        }
+        else if(strcmp(messageFromPC,"led3") == 0){
+          // code = 2;
+          floatFromPC = fmodf(floatFromPC, 100.00f);
+          dat = "4," + (String) floatFromPC;
+          queue.enqueue(dat);
+          dat.c_str();
+          Serial.print(dat); Serial.print(": ");
+          Serial.print("LED 3 on, intensity: "); Serial.println(floatFromPC);
           
         }
         else if(strcmp(messageFromPC,"ledoff") == 0){
           // code = 3;
-          dat = "3,000.00";
+          dat = "5,000.00";
           queue.enqueue(dat);
           Serial.print(dat); Serial.print(": ");
           Serial.println("LED off");
@@ -362,7 +307,7 @@ String commandParser(){
         else if(strcmp(messageFromPC,"dangle") == 0){
           // code = 4;
           floatFromPC = abs(fmodf(floatFromPC, 360.0f));
-          dat = "4," + (String) floatFromPC;
+          dat = "6," + (String) floatFromPC;
           queue.enqueue(dat);
           Serial.print(dat); Serial.print(": ");
           Serial.print("Set driver angle to: "); Serial.println(floatFromPC);
@@ -370,7 +315,7 @@ String commandParser(){
         }
         else if(strcmp(messageFromPC,"sdwrite") == 0){
           // code = 5;
-          dat = "5,000.00";
+          dat = "7,000.00";
           queue.enqueue(dat);
           Serial.print(dat); Serial.print(": ");
           Serial.println("Start DAQ write to SD");
@@ -378,10 +323,18 @@ String commandParser(){
         }
         else if(strcmp(messageFromPC,"sdstop") == 0){
           // code = 6;
-          dat = "6,000.00";
+          dat = "8,000.00";
           queue.enqueue(dat);
           Serial.print(dat); Serial.print(": ");
-          Serial.println("Stop DAQ write to SD");
+          Serial.println("Stopped DAQ write to SD");
+          
+        }
+        else if(strcmp(messageFromPC,"sdclear") == 0){
+          // code = 6;
+          dat = "9,000.00";
+          queue.enqueue(dat);
+          Serial.print(dat); Serial.print(": ");
+          Serial.println("Deleted datalog.txt");
           
         }
         else {
@@ -393,7 +346,6 @@ String commandParser(){
         }
         strcpy(receivedChars,"0");
         floatFromPC = 0.0;
-        // Serial.flush();
 
         newData = false;
         return dat;
@@ -402,7 +354,109 @@ String commandParser(){
 
 }
 
-void groundpacketParser(String receivedPacket){
+void groundpacketParser(char* receivedPacket){
 
-  ;
+  char * strtokIndx; // this is used by strtok() as an index
+
+  strtokIndx = strtok(receivedPacket,":");
+
+  #if SHOW_CALLSIGN
+  if(NULL != strtokIndx)
+  {
+    Serial.print(strtokIndx); Serial.print(": ");
+  }
+  #endif
+
+  strtokIndx = strtok(NULL, ",");
+
+  if(NULL != strtokIndx)
+  {
+    Serial.print("Pong: "); Serial.print(strtokIndx);
+  }
+
+  strtokIndx = strtok(NULL, ",");
+
+  if(NULL != strtokIndx)
+  {
+    Serial.print(", Battery Voltage:"); Serial.print(strtokIndx);
+  }
+
+  strtokIndx = strtok(NULL, ",");
+  
+  if(NULL != strtokIndx)
+  {
+    Serial.print(", Pitch:"); Serial.print(strtokIndx);
+  }
+
+  strtokIndx = strtok(NULL, ",");
+    
+  if(NULL != strtokIndx)
+  {
+    Serial.print(", Roll:"); Serial.print(strtokIndx);
+  }
+
+  strtokIndx = strtok(NULL, ",");
+    
+  if(NULL != strtokIndx)
+  {
+    Serial.print(", Yaw:"); Serial.print(strtokIndx);
+  }
+
+  strtokIndx = strtok(NULL, ",");
+    
+  if(NULL != strtokIndx)
+  {
+    Serial.print(", Pressure:"); Serial.print(strtokIndx);
+  }
+
+  strtokIndx = strtok(NULL, ",");
+    
+  if(NULL != strtokIndx)
+  {
+    Serial.print(", Altitude:"); Serial.print(strtokIndx);
+  }
+
+  strtokIndx = strtok(NULL, ",");
+    
+  if(NULL != strtokIndx)
+  {
+    Serial.print(", Temperature:"); Serial.print(strtokIndx);
+  }
+
+  strtokIndx = strtok(NULL, ",");
+    
+  if(NULL != strtokIndx)
+  {
+    Serial.print(", LED Status:"); Serial.print(strtokIndx);
+  }
+
+  strtokIndx = strtok(NULL, ",");
+    
+  if(NULL != strtokIndx)
+  {
+    Serial.print(", LED PWM:"); Serial.print(strtokIndx);
+  }
+
+  strtokIndx = strtok(NULL, ",");
+    
+  if(NULL != strtokIndx)
+  {
+    Serial.print(", SD Status:"); Serial.print(strtokIndx);
+  }
+
+  strtokIndx = strtok(NULL, ",");
+    
+  if(NULL != strtokIndx)
+  {
+    Serial.print(", RSSI:"); Serial.print(strtokIndx);
+  }
+
+  strtokIndx = strtok(NULL, ",");
+    
+  if(NULL != strtokIndx)
+  {
+    Serial.print(", SNR:"); Serial.print(strtokIndx);
+  }
+
+  Serial.println();
 }
