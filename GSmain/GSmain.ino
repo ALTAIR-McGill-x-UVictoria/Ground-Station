@@ -345,6 +345,15 @@ String commandParser(){
           Serial.print("LED blinking set for "); Serial.print(floatFromPC); Serial.println(" ms");
           
         }
+        else if(strcmp(messageFromPC,"ledbright") == 0){
+          // code = 11;
+          dat = "11," + (String) floatFromPC;
+          queue.enqueue(dat);
+          Serial.print(dat); Serial.print(": ");
+          Serial.print("LED brightness set for "); Serial.print(floatFromPC); Serial.println("%");
+          
+        }
+
         else {
           String dat = "0,000.00";
           queue.enqueue(dat);
