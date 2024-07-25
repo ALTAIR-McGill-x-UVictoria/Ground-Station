@@ -56,6 +56,7 @@ void setup() {
   pinMode(LED_PIN, OUTPUT);
 
   stepper.begin();
+  stepper.setSpeed(2000);
 
   //Disables sleep and reset
   digitalWrite(RESET_PIN, HIGH);
@@ -71,19 +72,21 @@ void setup() {
 
 void loop() {
 
-  payload_yaw += 0.001;
+  payload_yaw += 2; //Update with real IMU value
 
   if (!digitalRead(FAULT_PIN)) {
     Serial.println("Fault pin low: error. Exiting...");
     Serial.flush();
     exit(4);
   }
-  
+    
   //Remove lock when rotation is achieved
-  if (!steps_left) step_lock = false; 
+  if (!steps_left) {step_lock = false; }
   //Else, turn 
   else { 
+    Serial.println("Spinning"); Serial.flush();
     stepper.step(curr_dir, steps_left);
+    Serial.println("Stop Spinning"); Serial.flush();
     steps_left = 0;
   }
 
@@ -108,8 +111,6 @@ void loop() {
         break;
     }
   }
-
-  last_payload_yaw = payload_yaw;
 }
 
 int handle_command(String command){
@@ -131,8 +132,8 @@ int handle_command(String command){
     if (led_dir.startsWith("CCW")){ error = turn_led(CCW, USER); }
   }
   else if (command.startsWith("toggle yaw")) {//i.e. "toggle yaw"
-    if (toggle_yaw_stabilization) {toggle_yaw_stabilization = false; }
-    else if (!toggle_yaw_stabilization) { toggle_yaw_stabilization = true; }
+    if (toggle_yaw_stabilization) { toggle_yaw_stabilization = false; }
+    else if (!toggle_yaw_stabilization) { last_payload_yaw = payload_yaw; toggle_yaw_stabilization = true; }
   }
   else {
     error = -2;
@@ -209,7 +210,8 @@ int turn_led(bool dir, bool user_sys) {
 
 int stabilize_yaw(){ 
   float delta_angle = last_payload_yaw - payload_yaw;
-  //Serial.println(delta_angle);
+  Serial.print("Stabilizing: "); Serial.println(delta_angle);
+  last_payload_yaw = payload_yaw;
   turn_degrees(delta_angle, SYS);
 
   return 0;
