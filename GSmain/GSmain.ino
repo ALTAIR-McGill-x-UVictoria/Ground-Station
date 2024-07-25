@@ -175,7 +175,7 @@ void radioRx(){
     String callsgn = CALLSIGN;
     data = callsgn + ":" + data;
     const char* tosend = data.c_str(); //no idea if this works
-    rf95.send((uint8_t *)tosend, 20);
+    rf95.send((uint8_t *)tosend, 30);
     rf95.waitPacketSent();
     // Serial.println("Sent a reply");
     digitalWrite(LED_BUILTIN, LOW);
@@ -335,6 +335,14 @@ String commandParser(){
           queue.enqueue(dat);
           Serial.print(dat); Serial.print(": ");
           Serial.println("Deleted datalog.txt");
+          
+        }
+        else if(strcmp(messageFromPC,"ledblink") == 0){
+          // code = 6;
+          dat = "10," + (String) floatFromPC;
+          queue.enqueue(dat);
+          Serial.print(dat); Serial.print(": ");
+          Serial.print("LED blinking set for "); Serial.print(floatFromPC); Serial.println(" ms");
           
         }
         else {
