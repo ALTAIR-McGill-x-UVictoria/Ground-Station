@@ -1,5 +1,7 @@
-#include <AccelStepper.h>
+
+#include <Bonezegei_DRV8825.h>
 #include "Waveshare_10Dof-D.h"
+#include <SPI.h>
 
 #define DIR_PIN 2
 #define STEP_PIN 3
@@ -17,9 +19,7 @@
 #define USER 0
 #define SYS 1
 
-#define motorInterfaceType 1
-
-AccelStepper stepper = AccelStepper(motorInterfaceType, stepPin, dirPin);
+Bonezegei_DRV8825 stepper(DIR_PIN, STEP_PIN);
 
 IMU_ST_ANGLES_DATA stAngles;
 IMU_ST_SENSOR_DATA stGyroRawData;
@@ -28,7 +28,7 @@ IMU_ST_SENSOR_DATA stMagnRawData;
 
 int speed = 80;
 
-float partial_steps = 0;
+double partial_steps = 0;
 bool curr_dir = CW;
 int steps_left = 0;
 bool step_lock = false;
@@ -41,8 +41,8 @@ bool toggle_yaw_stabilization = false;
 bool led_state = false;
 
 int set_dir(bool dir);
-int turn_steps(float steps, bool user_sys);
-int turn_degrees(float degrees, bool user_sys);
+int turn_steps(double steps, bool user_sys);
+int turn_degrees(double degrees, bool user_sys);
 int turn_led(bool dir, bool user_sys);
 int handle_command(String command);
 int init_yaw_stabilization();
@@ -61,12 +61,13 @@ void setup() {
 
   pinMode(LED_PIN, OUTPUT);
 
-  stepper.setMaxSpeed(200); //Steps per second
-  stepper.setCurrentPosition(0);
 
   //Disables sleep and reset
   digitalWrite(RESET_PIN, HIGH);
   digitalWrite(SLEEP_PIN, HIGH);
+
+  stepper.begin();
+  stepper.setSpeed(2000);
 
   //Motor starts low
   digitalWrite(DIR_PIN, LOW);
@@ -77,30 +78,36 @@ void setup() {
 
 }
 
+int prev_time = 0;
+int total_steps = 0;
 void loop() {
   
   //Update angles
-  imuDataGet( &stAngles, &stGyroRawData, &stAccelRawData, &stMagnRawData);
-  payload_yaw = stAngles.fYaw;
+  if (1) {
+    imuDataGet( &stAngles, &stGyroRawData, &stAccelRawData, &stMagnRawData);
+    prev_time = millis();
+    payload_yaw = stAngles.fYaw;
+    Serial.print("Yaw "); Serial.print(payload_yaw); Serial.print("   Steps left: "); Serial.println(steps_left); Serial.print("   Dir: "); Serial.println(curr_dir);
+  }
+  
+  if (!steps_left) {step_lock = false; }
+  //Else, turn 
+  else {
+    stepper.step(curr_dir, steps_left);
+    total_steps+= steps_left;
+    steps_left = 0;
+  }
 
   if (!digitalRead(FAULT_PIN)) {
     Serial.println("Fault pin low: error. Exiting...");
     Serial.flush();
     exit(4);
   }
+
  
-  if (!stepper.isRunning()) {
-    int s = steps_left;
-    if (curr_dir == CCW) s *= -1;
-    stepper.move(s);
-    steps_left = 0;
-  }
- 
-  if ( toggle_yaw_stabilization && !stepper.isRunning() ){
+  if ( toggle_yaw_stabilization && !step_lock){
     stabilize_yaw();
   }
-
-  stepper.run();
 
   //Poll the serial for user input
   if (Serial.available() > 0) {
@@ -153,7 +160,7 @@ int handle_command(String command){
 
 //CW or CCW
 int set_dir(bool dir) {
-  digitalWrite(DIR_PIN, dir);
+  //digitalWrite(DIR_PIN, dir);
   curr_dir = dir;
   return 0;
 }
@@ -161,8 +168,8 @@ int set_dir(bool dir) {
 //Turn by X.x steps. The non-integer part is accumulated in "partial_steps"
 //When partial_steps reaches an integer, the motor position is corrected by adding the accumulated error
 //A CW then CCW rotation will cancel the error, hence why we need to add/substract based on direction
-int turn_steps(float steps, bool user_sys) {
-
+int turn_steps(double steps, bool user_sys) {
+  //Serial.print("Steps: "); Serial.println(steps);
   if (steps == 0) {return 0;}
 
   //Allows the user to rotate even when stabilizing (Changing the target angle)    //TODO What to do for partial steps?
@@ -191,6 +198,7 @@ int turn_steps(float steps, bool user_sys) {
   //Add or Remove to the accumulated error.
   int add_sub = (curr_dir == CW) ? 1 : -1;
   partial_steps += (add_sub)*(steps - (int)steps);
+  //Serial.print("In step fct partial steps: ");Serial.println(partial_steps);
 
   //The accumulated error reached 1 or -1. Add it to the steps to do
   if (abs(partial_steps) >= 1) {
@@ -204,26 +212,26 @@ int turn_steps(float steps, bool user_sys) {
 }
 
 //Turn by X.x degrees. Positive is CW, Negative is CCW
-int turn_degrees(float degrees, bool user_sys) {
-  float steps = (degrees / 360) * STEPS_PER_REV;
+int turn_degrees(double degrees, bool user_sys) {
+  double steps = (degrees / 360) * STEPS_PER_REV;
   return turn_steps(steps, user_sys);
 }
 
-//Go to previous or next LED
+//Go to previous or next LED 
 int turn_led(bool dir, bool user_sys) {
-  float steps = (STEPS_PER_REV / NUM_LEDS);
+  double steps = (STEPS_PER_REV / NUM_LEDS);
   if (dir == CCW) steps *= -1;
 
   return turn_steps(steps, user_sys);
 }
 
 int stabilize_yaw(){ 
-  float delta_angle = last_payload_yaw - payload_yaw;
-  Serial.print("Stabilizing: "); Serial.println(delta_angle);
+  double delta_angle = last_payload_yaw - payload_yaw;
+  //Serial.print("Stabilizing: "); Serial.println(delta_angle);
   last_payload_yaw = payload_yaw;
   turn_degrees(delta_angle, SYS);
 
-  return 0;
+  return 0; 
 }
 
 void sensorSetup(){
