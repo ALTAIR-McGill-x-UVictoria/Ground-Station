@@ -9,6 +9,10 @@
 #define RESET_PIN 5
 #define FAULT_PIN 6
 
+#define M0_PIN 99
+#define M1_PIN 99
+#define M2_PIN 99
+
 #define STEPS_PER_REV 200
 
 #define NUM_LEDS 3
@@ -27,6 +31,7 @@ IMU_ST_SENSOR_DATA stAccelRawData;
 IMU_ST_SENSOR_DATA stMagnRawData;
 
 int speed = 80;
+int step_division = 1;
 
 double partial_steps = 0;
 bool curr_dir = CW;
@@ -47,6 +52,7 @@ int turn_led(bool dir, bool user_sys);
 int handle_command(String command);
 int init_yaw_stabilization();
 int stabilize_yaw();
+int set_substep(int division);
 
 
 void setup() {
@@ -58,6 +64,10 @@ void setup() {
   pinMode(RESET_PIN, OUTPUT);
   pinMode(SLEEP_PIN, OUTPUT);
   pinMode(FAULT_PIN, INPUT);
+
+  pinMode(M0_PIN, OUTPUT);
+  pinMode(M1_PIN, OUTPUT);
+  pinMode(M2_PIN, OUTPUT);
 
   pinMode(LED_PIN, OUTPUT);
 
@@ -72,6 +82,12 @@ void setup() {
   //Motor starts low
   digitalWrite(DIR_PIN, LOW);
   digitalWrite(STEP_PIN, LOW);
+
+  if (set_substep(step_division)) {
+    Serial.println("Invalid Step Division");
+    Serial.flush();
+    exit(-4);
+  };
 
   Serial.println("Done setup");
   Serial.flush();
@@ -213,13 +229,13 @@ int turn_steps(double steps, bool user_sys) {
 
 //Turn by X.x degrees. Positive is CW, Negative is CCW
 int turn_degrees(double degrees, bool user_sys) {
-  double steps = (degrees / 360) * STEPS_PER_REV;
+  double steps = (degrees / 360) * STEPS_PER_REV*step_division;
   return turn_steps(steps, user_sys);
 }
 
 //Go to previous or next LED 
 int turn_led(bool dir, bool user_sys) {
-  double steps = (STEPS_PER_REV / NUM_LEDS);
+  double steps = (STEPS_PER_REV*step_division / NUM_LEDS);
   if (dir == CCW) steps *= -1;
 
   return turn_steps(steps, user_sys);
@@ -232,6 +248,49 @@ int stabilize_yaw(){
   turn_degrees(delta_angle, SYS);
 
   return 0; 
+}
+
+int set_substep(int division){
+
+  bool M0 = 0;
+  bool M1 = 0;
+  bool M2 = 0;
+
+  switch(division) {
+    case 1:
+      M0 = 1;
+      M1 = 0;
+      M2 = 0;
+      break;
+    case 2:
+      M0 = 0;
+      M1 = 1;
+      M2 = 0;
+      break;
+    case 4:
+      M0 = 1;
+      M1 = 1;
+      M2 = 0;
+      break;
+    case 16:
+      M0 = 0;
+      M1 = 0;
+      M2 = 1;
+      break;
+    case 32:
+      M0 = 1;
+      M1 = 1;
+      M2 = 1;
+      break;
+    default:
+      return -4;
+  }
+
+  digitalWrite(M0_PIN, M0);
+  digitalWrite(M1_PIN, M1);
+  digitalWrite(M2_PIN, M2);
+
+  return 0;
 }
 
 void sensorSetup(){
