@@ -174,7 +174,7 @@ void radioRx(){
     } else {data = "0,000.00";}
     String callsgn = CALLSIGN;
     data = callsgn + ":" + data;
-    const char* tosend = data.c_str(); //no idea if this works
+    const char* tosend = data.c_str();
     rf95.send((uint8_t *)tosend, 30);
     rf95.waitPacketSent();
     // Serial.println("Sent a reply");
@@ -351,6 +351,14 @@ String commandParser(){
           queue.enqueue(dat);
           Serial.print(dat); Serial.print(": ");
           Serial.print("LED brightness set for "); Serial.print(floatFromPC); Serial.println("%");
+          
+        }
+        else if(strcmp(messageFromPC,"togglelong") == 0){
+          // code = 11;
+          dat = "12," + (String) floatFromPC;
+          queue.enqueue(dat);
+          Serial.print(dat); Serial.print(": ");
+          Serial.println("Toggled long packet format");
           
         }
 
