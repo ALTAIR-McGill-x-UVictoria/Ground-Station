@@ -15,28 +15,39 @@
 
 //Radio debugging without FC
 #define DEBUG_RX 0
-#define LOOP_TIMER 1000 
+#define LOOP_TIMER 500
 
 //Queue
 #define QUEUE_SIZE 10
 
 //Radio pin definitions
-#define RFM95_RST 5
-#define RFM95_CS 10
-#define RFM95_INT 4
+//Radio #1
+#define RFM96_RST 5
+#define RFM96_CS 10
+#define RFM96_INT 4
+//Radio #2
+#define RFM95_RST 7
+#define RFM95_CS 37
+#define RFM95_INT 6
 
 //LoRa parameters definitions
-#define RF95_FREQ 433.0
+#define RF96_FREQ 433.0 //Rx
+#define RF95_FREQ 903.0 //Tx
 #define SF 8
 #define BW 125000
 #define TX_POWER 20
 
-//Show the raw packet received from FC instead of being parsed
+//Functionality enable definitions
 #define SHOW_AS_RAW_PACKET 1
+#define RX_ENABLE 1
+#define TX_ENABLE 0
+
 
 
 // Singleton instances
 RH_RF95 rf95(RFM95_CS, RFM95_INT);
+RH_RF95 rf96(RFM96_CS, RFM96_INT);
+
 ArduinoQueue<String> queue(QUEUE_SIZE);
 
 IMU_ST_ANGLES_DATA stAngles;
@@ -59,14 +70,20 @@ String commandPacket;
 
 boolean newData = false;
 
-// elapsedMillis sendTimer;
+elapsedMillis sendTimer;
 
 void setup() {
 
   Serial.begin(115200);
   while (!Serial && (millis() < 3000));
 
-  radioSetup();
+  #if TX_ENABLE
+  radio903Setup();
+  #endif
+
+  #if RX_ENABLE
+  radio433Setup();
+  #endif
 
   Serial.println("System init complete");
 
@@ -75,22 +92,24 @@ void setup() {
 
 void loop() {  
 
-  // if(DEBUG_RX == 1){
-  //   if (sendTimer >= LOOP_TIMER){
-  //     recvCommand();
-  //     commandPacket = commandParser();
-  //     radioRx();
-  //     sendTimer = 0;
-  //   }
-  // } else{
-  //   recvCommand();
-  //   commandPacket = commandParser();
-  //   radioRx();
-  // }
-
   recvCommand();
   commandPacket = commandParser();
-  radioRx();
+  
+  if(sendTimer>= LOOP_TIMER){
+
+    if(TX_ENABLE){      
+      radioTxDuplex(commandPacket.c_str());
+    }
+
+    
+
+    sendTimer = 0;
+  }
+
+  if(RX_ENABLE){
+    radioRxDuplex();
+  }
+
 }
 
 
@@ -136,6 +155,103 @@ void radioSetup(){
 
 }
 
+void radio903Setup(){
+  pinMode(RFM95_RST, OUTPUT);
+  digitalWrite(RFM95_RST, HIGH);
+
+  // Serial.begin(115200);
+  // while (!Serial) delay(1);
+  // delay(100);
+
+  // Serial.println("Feather LoRa TX Test!");
+
+  // manual reset
+  digitalWrite(RFM95_RST, LOW);
+  delay(10);
+  digitalWrite(RFM95_RST, HIGH);
+  delay(10);
+
+  while (!rf95.init()) {
+    Serial.println("LoRa radio init failed");
+    // Serial.println("Uncomment '#define SERIAL_DEBUG' in RH_RF95.cpp for detailed debug info");
+    while (1);
+  }
+  // Serial.println("LoRa radio init OK!");
+
+  // Defaults after init are 434.0MHz, modulation GFSK_Rb250Fd250, +13dbM
+  if (!rf95.setFrequency(RF95_FREQ)) {
+    Serial.println("setFrequency failed");
+    while (1);
+  }
+
+  Serial.print("Set Rx to: "); Serial.println(RF95_FREQ);
+
+  rf95.setSignalBandwidth(BW);
+  rf95.setSpreadingFactor(SF);
+  rf95.setTxPower(TX_POWER, false);
+  rf95.
+}
+
+void radio433Setup(){
+  pinMode(RFM95_RST, OUTPUT);
+  digitalWrite(RFM95_RST, HIGH);
+
+  // Serial.begin(115200);
+  // while (!Serial) delay(1);
+  // delay(100);
+
+  // Serial.println("Feather LoRa TX Test!");
+
+  // manual reset
+  digitalWrite(RFM96_RST, LOW);
+  delay(10);
+  digitalWrite(RFM96_RST, HIGH);
+  delay(10);
+
+  while (!rf96.init()) {
+    Serial.println("LoRa radio init failed");
+    // Serial.println("Uncomment '#define SERIAL_DEBUG' in RH_RF95.cpp for detailed debug info");
+    while (1);
+  }
+  // Serial.println("LoRa radio init OK!");
+
+  // Defaults after init are 434.0MHz, modulation GFSK_Rb250Fd250, +13dbM
+  if (!rf95.setFrequency(RF96_FREQ)) {
+    Serial.println("setFrequency failed");
+    while (1);
+  }
+
+
+  Serial.print("Set Rx to: "); Serial.println(RF96_FREQ);
+
+  rf96.setSignalBandwidth(BW);
+  rf96.setSpreadingFactor(SF);
+  rf96.setTxPower(TX_POWER, false);
+}
+
+void radioTxDuplex(char radiopacket[100]){
+  rf95.send((uint8_t *)radiopacket, 100);
+  rf95.waitPacketSent();
+}
+
+void radioRxDuplex(){
+  if (rf96.available()){
+
+    uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
+    uint8_t len = sizeof(buf);
+
+    if(rf96.recv(buf, &len)){
+      digitalWrite(LED_BUILTIN, HIGH);
+      Serial.println((char*)buf);
+      Serial.print("RSSI: ");
+      Serial.print(rf95.lastRssi(), DEC);
+      Serial.print(", SNR: ");
+      Serial.println(rf95.lastSNR(), DEC);
+      
+    }
+    
+  }
+}
 
 void radioRx(){
   if (rf95.available() || DEBUG_RX) {
