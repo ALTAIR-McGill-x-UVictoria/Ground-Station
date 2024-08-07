@@ -32,7 +32,7 @@
 #define TX_POWER 20
 
 //Show the raw packet received from FC instead of being parsed
-#define SHOW_AS_RAW_PACKET 1
+int showAsRawPacket = 1;
 
 
 // Singleton instances
@@ -154,7 +154,7 @@ void radioRx(){
       digitalWrite(LED_BUILTIN, HIGH);
       // RH_RF95::printBuffer("Received: ", buf, len);
 
-      if(SHOW_AS_RAW_PACKET == 1){
+      if(showAsRawPacket == 1){
         Serial.println((char*)buf);
       } else{
         groundpacketParser((char*) buf);
@@ -262,8 +262,8 @@ String commandParser(){
           // code = 1;
           dat = "1,000.00";
           queue.enqueue(dat);
-          Serial.print(dat); Serial.print(": ");
-          Serial.println("pong");
+          // Serial.print(dat); Serial.print(": ");
+          // Serial.println("pong");
           
         }
         else if(strcmp(messageFromPC,"led1") == 0){
@@ -273,7 +273,7 @@ String commandParser(){
           queue.enqueue(dat);
           dat.c_str();
           Serial.print(dat); Serial.print(": ");
-          Serial.print("LED 1 on, intensity: "); Serial.println(floatFromPC);
+          Serial.println("Toggled LED 1");
           
         }
         else if(strcmp(messageFromPC,"led2") == 0){
@@ -283,7 +283,7 @@ String commandParser(){
           queue.enqueue(dat);
           dat.c_str();
           Serial.print(dat); Serial.print(": ");
-          Serial.print("LED 2 on, intensity: "); Serial.println(floatFromPC);
+          Serial.println("Toggle LED 2");
           
         }
         else if(strcmp(messageFromPC,"led3") == 0){
@@ -293,7 +293,7 @@ String commandParser(){
           queue.enqueue(dat);
           dat.c_str();
           Serial.print(dat); Serial.print(": ");
-          Serial.print("LED 3 on, intensity: "); Serial.println(floatFromPC);
+          Serial.println("Toggled LED 3");
           
         }
         else if(strcmp(messageFromPC,"ledoff") == 0){
@@ -361,6 +361,10 @@ String commandParser(){
           Serial.println("Toggled long packet format");
           
         }
+        else if(strcmp(messageFromPC,"toggleparsing") == 0){
+          showAsRawPacket = !showAsRawPacket;
+          
+        }
 
         else {
           String dat = "0,000.00";
@@ -425,6 +429,27 @@ void groundpacketParser(char* receivedPacket){
   if(NULL != strtokIndx)
   {
     Serial.print(", Yaw:"); Serial.print(strtokIndx);
+  }
+
+  strtokIndx = strtok(NULL, ",");
+    
+  if(NULL != strtokIndx)
+  {
+    Serial.print(", AccX:"); Serial.print(strtokIndx);
+  }
+
+  strtokIndx = strtok(NULL, ",");
+    
+  if(NULL != strtokIndx)
+  {
+    Serial.print(", AccY:"); Serial.print(strtokIndx);
+  }
+
+  strtokIndx = strtok(NULL, ",");
+    
+  if(NULL != strtokIndx)
+  {
+    Serial.print(", AccZ:"); Serial.print(strtokIndx);
   }
 
   strtokIndx = strtok(NULL, ",");
