@@ -38,7 +38,7 @@ bool curr_dir = CW;
 int steps_left = 0;
 bool step_lock = false;
 
-float payload_yaw = 0; 
+float payload_yaw = 0; //TODO This should be constantly updated with data from imu. Place holder for now
 float last_payload_yaw = 0;
 bool toggle_yaw_stabilization = false;
 
@@ -103,8 +103,8 @@ void loop() {
     imuDataGet( &stAngles, &stGyroRawData, &stAccelRawData, &stMagnRawData);
     prev_time = millis();
     payload_yaw = stAngles.fYaw;
-    Serial.print("Yaw "); Serial.print(payload_yaw); Serial.print("   Partial: "); Serial.println(partial_steps);
-}
+    Serial.print("Yaw "); Serial.print(payload_yaw); Serial.print("   Roll: "); Serial.print(stAngles.fRoll); Serial.print("   Steps left: "); Serial.println(steps_left); Serial.print("   Dir: "); Serial.println(curr_dir);
+  }
   
   if (!steps_left) {step_lock = false; }
   //Else, turn 
@@ -165,7 +165,7 @@ int handle_command(String command){
   }
   else if (command.startsWith("toggle yaw")) {//i.e. "toggle yaw"
     if (toggle_yaw_stabilization) { toggle_yaw_stabilization = false; }
-    else if (!toggle_yaw_stabilization) { toggle_yaw_stabilization = true; }
+    else if (!toggle_yaw_stabilization) { last_payload_yaw = payload_yaw; toggle_yaw_stabilization = true; }
   }
   else {
     error = -2;
@@ -207,22 +207,20 @@ int turn_steps(double steps, bool user_sys) {
   //Ignore command if motor already turning
   if (step_lock) {return -1;}
 
-   //Select direction based on sign
+  //Select direction based on sign
   bool dir = (steps>0) ? CW : CCW;
   set_dir(dir);
-  Serial.print("Steps is: "); Serial.print(steps); Serial.print(" so dir is: "); Serial.println(dir);
 
-  //Update the accumulated error.
-  partial_steps += steps - (int)steps;
+  //Add or Remove to the accumulated error.
+  int add_sub = (curr_dir == CW) ? 1 : -1;
+  partial_steps += (add_sub)*(steps - (int)steps);
+  //Serial.print("In step fct partial steps: ");Serial.println(partial_steps);
 
   //The accumulated error reached 1 or -1. Add it to the steps to do
   if (abs(partial_steps) >= 1) {
     steps += (int)partial_steps;
     partial_steps -= (int)partial_steps;
   }
-  //Select direction based on sign (again)
-  dir = (steps>0) ? CW : CCW;
-  set_dir(dir);
 
   steps_left = abs( (int)steps );
   step_lock = true;
@@ -244,9 +242,9 @@ int turn_led(bool dir, bool user_sys) {
 }
 
 int stabilize_yaw(){ 
-  double delta_angle =  last_payload_yaw - payload_yaw;
-  last_payload_yaw = payload_yaw;
+  double delta_angle = last_payload_yaw - payload_yaw;
   //Serial.print("Stabilizing: "); Serial.println(delta_angle);
+  last_payload_yaw = payload_yaw;
   turn_degrees(delta_angle, SYS);
 
   return 0; 

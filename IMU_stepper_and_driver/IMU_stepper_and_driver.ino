@@ -56,7 +56,7 @@ void setup() {
   pinMode(LED_PIN, OUTPUT);
 
   stepper.begin();
-  stepper.setSpeed(2000);
+  stepper.setSpeed(2250);
 
   //Disables sleep and reset
   digitalWrite(RESET_PIN, HIGH);
