@@ -104,7 +104,7 @@ void loop() {
     prev_time = millis();
     payload_yaw = stAngles.fYaw;
     Serial.print("Yaw "); Serial.print(payload_yaw); Serial.print("   Partial: "); Serial.println(partial_steps);
-}
+  }
   
   if (!steps_left) {step_lock = false; }
   //Else, turn 
@@ -247,6 +247,13 @@ int stabilize_yaw(){
   double delta_angle =  last_payload_yaw - payload_yaw;
   last_payload_yaw = payload_yaw;
   //Serial.print("Stabilizing: "); Serial.println(delta_angle);
+
+  //Range of IMU is [-180,180]. Example Case: To move from -179 to 180 is 1 degree not -359 degrees 
+  if (abs(delta_angle) > 180) {
+    if (delta_angle > 0) { delta_angle -= 360;}
+    if (delta_angle < 0) { delta_angle += 360;}
+  }
+
   turn_degrees(delta_angle, SYS);
 
   return 0; 
