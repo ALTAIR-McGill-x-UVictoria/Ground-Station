@@ -1,7 +1,7 @@
-
 #include <Bonezegei_DRV8825.h>
 #include "Waveshare_10Dof-D.h"
 #include <SPI.h>
+#include <IntervalTimer.h>
 
 #define DIR_PIN 2
 #define STEP_PIN 3
@@ -24,13 +24,14 @@
 #define SYS 1
 
 Bonezegei_DRV8825 stepper(DIR_PIN, STEP_PIN);
+IntervalTimer timer1;
 
 IMU_ST_ANGLES_DATA stAngles;
 IMU_ST_SENSOR_DATA stGyroRawData;
 IMU_ST_SENSOR_DATA stAccelRawData;
 IMU_ST_SENSOR_DATA stMagnRawData;
 
-int speed = 80;
+int speed = 2000;
 int step_division = 4;
 
 double partial_steps = 0;
@@ -54,6 +55,17 @@ int init_yaw_stabilization();
 int stabilize_yaw();
 int set_substep(int division);
 
+bool step_state = true;
+void handle_step(){
+  if (steps_left > 0 && !step_state) {
+    digitalWrite(STEP_PIN, 1);
+    steps_left -= 1;
+  }
+  else if (step_state){
+    digitalWrite(STEP_PIN, 0 );
+  }
+  step_state = !step_state;
+}
 
 void setup() {
   Serial.begin(9600);
@@ -88,6 +100,8 @@ void setup() {
     Serial.flush();
     exit(-4);
   };
+  
+  timer1.begin(handle_step, speed);
 
   Serial.println("Done setup");
   Serial.flush();
@@ -108,10 +122,11 @@ void loop() {
   
   if (!steps_left) {step_lock = false; }
   //Else, turn 
-  else {
-    stepper.step(curr_dir, steps_left);
-    total_steps+= steps_left;
-    steps_left = 0;
+  else if (1) {
+    //digitalWrite(STEP_PIN, 1);
+    //delayMicroseconds(1000);
+    //digitalWrite(STEP_PIN, 0);
+    //steps_left -= 1;
   }
 
   if (!digitalRead(FAULT_PIN)) {
@@ -210,7 +225,7 @@ int turn_steps(double steps, bool user_sys) {
    //Select direction based on sign
   bool dir = (steps>0) ? CW : CCW;
   set_dir(dir);
-  Serial.print("Steps is: "); Serial.print(steps); Serial.print(" so dir is: "); Serial.println(dir);
+  //Serial.print("Steps is: "); Serial.print(steps); Serial.print(" so dir is: "); Serial.println(dir);
 
   //Update the accumulated error.
   partial_steps += steps - (int)steps;
