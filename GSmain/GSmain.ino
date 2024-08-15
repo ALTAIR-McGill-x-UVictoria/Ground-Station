@@ -59,6 +59,8 @@ String commandPacket;
 
 boolean newData = false;
 
+int receptionConfirm = 0;
+
 // elapsedMillis sendTimer;
 
 void setup() {
@@ -143,6 +145,8 @@ void radioRx(){
     uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
     // uint8_t len = sizeof(buf);
 
+    
+
     if(DEBUG_RX){
       char debugMessage[] = "DEBUG PACKET";
       strcpy(buf, debugMessage);
@@ -154,11 +158,10 @@ void radioRx(){
       digitalWrite(LED_BUILTIN, HIGH);
       // RH_RF95::printBuffer("Received: ", buf, len);
 
-      if(showAsRawPacket == 1){
-        Serial.println((char*)buf);
-      } else{
-        groundpacketParser((char*) buf);
-      }
+      groundpacketParser((char*) buf, showAsRawPacket);
+      
+
+
       Serial.print("RSSI: ");
       Serial.print(rf95.lastRssi(), DEC);
       Serial.print(", SNR: ");
@@ -168,13 +171,20 @@ void radioRx(){
      // Send a reply
     String data;
     // byte data;
+    
 
-    if(queue.isEmpty() != 1){
-    data = queue.dequeue();
-    } else {data = "0,000.00";}
+    if(queue.isEmpty() != 1 && receptionConfirm == 0){
+      data = queue.getHead();
+    
+    } else {
+      data = "0,000.00";
+      queue.dequeue();//TO TEST
+    }
+
     String callsgn = CALLSIGN;
     data = callsgn + ":" + data;
     const char* tosend = data.c_str();
+    
     rf95.send((uint8_t *)tosend, 30);
     rf95.waitPacketSent();
     // Serial.println("Sent a reply");
@@ -272,7 +282,7 @@ String commandParser(){
           dat = "2," + (String) floatFromPC;
           queue.enqueue(dat);
           dat.c_str();
-          Serial.print(dat); Serial.print(": ");
+          // Serial.print(dat); Serial.print(": ");
           Serial.println("Toggled LED 1");
           
         }
@@ -282,7 +292,7 @@ String commandParser(){
           dat = "3," + (String) floatFromPC;
           queue.enqueue(dat);
           dat.c_str();
-          Serial.print(dat); Serial.print(": ");
+          // Serial.print(dat); Serial.print(": ");
           Serial.println("Toggle LED 2");
           
         }
@@ -292,7 +302,7 @@ String commandParser(){
           dat = "4," + (String) floatFromPC;
           queue.enqueue(dat);
           dat.c_str();
-          Serial.print(dat); Serial.print(": ");
+          // Serial.print(dat); Serial.print(": ");
           Serial.println("Toggled LED 3");
           
         }
@@ -300,7 +310,7 @@ String commandParser(){
           // code = 3;
           dat = "5,000.00";
           queue.enqueue(dat);
-          Serial.print(dat); Serial.print(": ");
+          // Serial.print(dat); Serial.print(": ");
           Serial.println("LED off");
           
         }
@@ -309,7 +319,7 @@ String commandParser(){
           floatFromPC = abs(fmodf(floatFromPC, 360.0f));
           dat = "6," + (String) floatFromPC;
           queue.enqueue(dat);
-          Serial.print(dat); Serial.print(": ");
+          // Serial.print(dat); Serial.print(": ");
           Serial.print("Set driver angle to: "); Serial.println(floatFromPC);
           
         }
@@ -317,7 +327,7 @@ String commandParser(){
           // code = 5;
           dat = "7,000.00";
           queue.enqueue(dat);
-          Serial.print(dat); Serial.print(": ");
+          // Serial.print(dat); Serial.print(": ");
           Serial.println("Start DAQ write to SD");
           
         }
@@ -325,7 +335,7 @@ String commandParser(){
           // code = 6;
           dat = "8,000.00";
           queue.enqueue(dat);
-          Serial.print(dat); Serial.print(": ");
+          // Serial.print(dat); Serial.print(": ");
           Serial.println("Stopped DAQ write to SD");
           
         }
@@ -333,7 +343,7 @@ String commandParser(){
           // code = 6;
           dat = "9,000.00";
           queue.enqueue(dat);
-          Serial.print(dat); Serial.print(": ");
+          // Serial.print(dat); Serial.print(": ");
           Serial.println("Deleted datalog.txt");
           
         }
@@ -341,7 +351,7 @@ String commandParser(){
           // code = 6;
           dat = "10," + (String) floatFromPC;
           queue.enqueue(dat);
-          Serial.print(dat); Serial.print(": ");
+          // Serial.print(dat); Serial.print(": ");
           Serial.print("LED blinking set for "); Serial.print(floatFromPC); Serial.println(" ms");
           
         }
@@ -349,30 +359,58 @@ String commandParser(){
           // code = 11;
           dat = "11," + (String) floatFromPC;
           queue.enqueue(dat);
-          Serial.print(dat); Serial.print(": ");
+          // Serial.print(dat); Serial.print(": ");
           Serial.print("LED brightness set for "); Serial.print(floatFromPC); Serial.println("%");
           
         }
         else if(strcmp(messageFromPC,"togglelong") == 0){
-          // code = 11;
+          // code = 12;
           dat = "12," + (String) floatFromPC;
           queue.enqueue(dat);
-          Serial.print(dat); Serial.print(": ");
+          // Serial.print(dat); Serial.print(": ");
           Serial.println("Toggled long packet format");
           
         }
         else if(strcmp(messageFromPC,"toggleparsing") == 0){
-          showAsRawPacket = !showAsRawPacket;
+          showAsRawPacket = !showAsRawPacket; 
           
         }
-
+        else if(strcmp(messageFromPC,"zeromotor") == 0){
+          dat = "13," + (String) floatFromPC;
+          queue.enqueue(dat);
+          // Serial.print(dat); Serial.print(": ");
+          Serial.println("Set current motor angle as zero");
+          
+        }
+        else if(strcmp(messageFromPC,"stepperspeed") == 0){
+          dat = "14," + (String) floatFromPC;
+          queue.enqueue(dat);
+          // Serial.print(dat); Serial.print(": ");
+          Serial.print("Set step speed to "); Serial.println(floatFromPC);
+          
+        }
+        else if(strcmp(messageFromPC,"togglestab") == 0){
+          dat = "15," + (String) floatFromPC;
+          queue.enqueue(dat);
+          // Serial.print(dat); Serial.print(": ");
+          Serial.println("Toggled beacon stabilization");
+          
+        }
+        else if(strcmp(messageFromPC,"toggleflightmode") == 0){
+          dat = "16," + (String) floatFromPC;
+          queue.enqueue(dat);
+          // Serial.print(dat); Serial.print(": ");
+          Serial.println("Toggled flight mode fast transmission rate");
+          
+        }
         else {
           String dat = "0,000.00";
           queue.enqueue(dat);
-          Serial.print(dat); Serial.print(": ");
+          // Serial.print(dat); Serial.print(": ");
           Serial.print("Error: "); Serial.print(messageFromPC); Serial.println(" is not a valid command");
           
         }
+        
         strcpy(receivedChars,"0");
         floatFromPC = 0.0;
 
@@ -383,16 +421,19 @@ String commandParser(){
 
 }
 
-void groundpacketParser(char* receivedPacket){
+void groundpacketParser(char* receivedPacket, int enableRaw){
 
   char * strtokIndx; // this is used by strtok() as an index
+
 
   strtokIndx = strtok(receivedPacket,":");
 
   #if SHOW_CALLSIGN
   if(NULL != strtokIndx)
   {
+    if(enableRaw == 0){
     Serial.print(strtokIndx); Serial.print(": ");
+    }
   }
   #endif
 
@@ -400,112 +441,150 @@ void groundpacketParser(char* receivedPacket){
 
   if(NULL != strtokIndx)
   {
+    if(enableRaw == 0){
     Serial.print("Pong: "); Serial.print(strtokIndx);
+    }
+    receptionConfirm = strtokIndx;
   }
 
   strtokIndx = strtok(NULL, ",");
 
   if(NULL != strtokIndx)
   {
+    if(enableRaw == 0){
     Serial.print(", Battery Voltage:"); Serial.print(strtokIndx);
+    }
   }
 
   strtokIndx = strtok(NULL, ",");
   
   if(NULL != strtokIndx)
   {
+    if(enableRaw == 0){
     Serial.print(", Pitch:"); Serial.print(strtokIndx);
+    }
   }
 
   strtokIndx = strtok(NULL, ",");
     
   if(NULL != strtokIndx)
   {
+    if(enableRaw == 0){
     Serial.print(", Roll:"); Serial.print(strtokIndx);
+    }
   }
 
   strtokIndx = strtok(NULL, ",");
     
   if(NULL != strtokIndx)
   {
+    if(enableRaw == 0){
     Serial.print(", Yaw:"); Serial.print(strtokIndx);
+    }
   }
 
   strtokIndx = strtok(NULL, ",");
     
   if(NULL != strtokIndx)
   {
+    if(enableRaw == 0){
     Serial.print(", AccX:"); Serial.print(strtokIndx);
+    }
   }
 
   strtokIndx = strtok(NULL, ",");
     
   if(NULL != strtokIndx)
   {
+    if(enableRaw == 0){
     Serial.print(", AccY:"); Serial.print(strtokIndx);
+    }
   }
 
   strtokIndx = strtok(NULL, ",");
     
   if(NULL != strtokIndx)
   {
+    if(enableRaw == 0){
     Serial.print(", AccZ:"); Serial.print(strtokIndx);
+    }
   }
 
   strtokIndx = strtok(NULL, ",");
     
   if(NULL != strtokIndx)
   {
+    if(enableRaw == 0){
     Serial.print(", Pressure:"); Serial.print(strtokIndx);
+    }
   }
 
   strtokIndx = strtok(NULL, ",");
     
   if(NULL != strtokIndx)
   {
+    if(enableRaw == 0){
     Serial.print(", Altitude:"); Serial.print(strtokIndx);
+    }
   }
 
   strtokIndx = strtok(NULL, ",");
     
   if(NULL != strtokIndx)
   {
+    if(enableRaw == 0){
     Serial.print(", Temperature:"); Serial.print(strtokIndx);
+    }
   }
 
   strtokIndx = strtok(NULL, ",");
     
   if(NULL != strtokIndx)
   {
+    if(enableRaw == 0){
     Serial.print(", LED Status:"); Serial.print(strtokIndx);
+    }
   }
 
   strtokIndx = strtok(NULL, ",");
     
   if(NULL != strtokIndx)
   {
+    if(enableRaw == 0){
     Serial.print(", LED PWM:"); Serial.print(strtokIndx);
+    }
   }
 
   strtokIndx = strtok(NULL, ",");
     
   if(NULL != strtokIndx)
   {
+    if(enableRaw == 0){
     Serial.print(", SD Status:"); Serial.print(strtokIndx);
+    }
   }
 
   strtokIndx = strtok(NULL, ",");
     
   if(NULL != strtokIndx)
   {
+    if(enableRaw == 0){
     Serial.print(", RSSI:"); Serial.print(strtokIndx);
+    }
   }
 
   strtokIndx = strtok(NULL, ",");
     
   if(NULL != strtokIndx)
   {
+    if(enableRaw == 0){
     Serial.print(", SNR:"); Serial.print(strtokIndx);
+    }
+  }
+
+
+  if(enableRaw == 1){
+    Serial.print(receivedPacket);
   }
 
   Serial.println();
