@@ -32,7 +32,7 @@
 #define TX_POWER 20
 
 //Show the raw packet received from FC instead of being parsed
-int showAsRawPacket = 1;
+int showAsRawPacket = 0;
 
 
 // Singleton instances
@@ -59,7 +59,7 @@ String commandPacket;
 
 boolean newData = false;
 
-int receptionConfirm = 0;
+volatile int receptionConfirm = 0;
 
 // elapsedMillis sendTimer;
 
@@ -70,6 +70,7 @@ void setup() {
 
   radioSetup();
 
+  queue.dequeue();
   Serial.println("System init complete");
 
   
@@ -90,9 +91,11 @@ void loop() {
   //   radioRx();
   // }
 
+
   recvCommand();
   commandPacket = commandParser();
   radioRx();
+
 }
 
 
@@ -140,6 +143,8 @@ void radioSetup(){
 
 
 void radioRx(){
+
+  
   if (rf95.available() || DEBUG_RX) {
     // Should be a message for us now
     uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
@@ -171,29 +176,52 @@ void radioRx(){
      // Send a reply
     String data;
     // byte data;
+    // Serial.println(queue.item_count());  
+
+    if(queue.isEmpty() != 1){
+
+      data = queue.getHead();
+      // Serial.println("here");
+      // Serial.println(data);      
+    
+    } 
+    else {
+      data = "0,000.00";
+      // queue.dequeue();//TO TEST
+    }
+    
+    // Serial.print("Received: ");
+    // Serial.println(receptionConfirm);
+
+    if (receptionConfirm == 1){
+      queue.dequeue();
+      data = "0,000.00";
+    }
+    
     
 
-    if(queue.isEmpty() != 1 && receptionConfirm == 0){
-      data = queue.getHead();
-    
-    } else {
-      data = "0,000.00";
-      queue.dequeue();//TO TEST
-    }
+    Serial.println(data);
 
     String callsgn = CALLSIGN;
     data = callsgn + ":" + data;
     const char* tosend = data.c_str();
     
+    // Serial.println(tosend);
+
+    // Serial.print("Flightmode: "); Serial.print(toggle ?)
+    Serial.println("=======");
+
     rf95.send((uint8_t *)tosend, 30);
     rf95.waitPacketSent();
     // Serial.println("Sent a reply");
     digitalWrite(LED_BUILTIN, LOW);
-    } 
+
+    
+  } 
   else {
     // Serial.println("Receive failed");
   }
-  
+
 
 }
 
@@ -403,9 +431,17 @@ String commandParser(){
           Serial.println("Toggled flight mode fast transmission rate");
           
         }
+        else if(strcmp(messageFromPC,"setradiotimeout") == 0){
+          dat = "17," + (String) floatFromPC;
+          queue.enqueue(dat);
+          // Serial.print(dat); Serial.print(": ");
+          Serial.print("Set radio timeout for "); Serial.print(floatFromPC); Serial.println(" ms");
+          
+        }
+
         else {
           String dat = "0,000.00";
-          queue.enqueue(dat);
+          // queue.enqueue(dat);
           // Serial.print(dat); Serial.print(": ");
           Serial.print("Error: "); Serial.print(messageFromPC); Serial.println(" is not a valid command");
           
@@ -425,6 +461,11 @@ void groundpacketParser(char* receivedPacket, int enableRaw){
 
   char * strtokIndx; // this is used by strtok() as an index
 
+  // char * packetCopy = ""; 
+  // strcpy(packetCopy, receivedPacket);
+  if (enableRaw){
+    Serial.print(receivedPacket);
+  }
 
   strtokIndx = strtok(receivedPacket,":");
 
@@ -437,6 +478,10 @@ void groundpacketParser(char* receivedPacket, int enableRaw){
   }
   #endif
 
+  // if(enableRaw == 1){
+  //   Serial.print(packetCopy);
+  // }
+
   strtokIndx = strtok(NULL, ",");
 
   if(NULL != strtokIndx)
@@ -444,7 +489,9 @@ void groundpacketParser(char* receivedPacket, int enableRaw){
     if(enableRaw == 0){
     Serial.print("Pong: "); Serial.print(strtokIndx);
     }
-    receptionConfirm = strtokIndx;
+    
+    receptionConfirm = strcmp(strtokIndx,"1") == 0 ? 1 : 0; 
+    
   }
 
   strtokIndx = strtok(NULL, ",");
@@ -583,9 +630,8 @@ void groundpacketParser(char* receivedPacket, int enableRaw){
   }
 
 
-  if(enableRaw == 1){
-    Serial.print(receivedPacket);
-  }
+  
 
   Serial.println();
+  
 }
