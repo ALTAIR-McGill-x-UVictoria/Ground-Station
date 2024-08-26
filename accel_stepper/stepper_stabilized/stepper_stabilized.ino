@@ -31,7 +31,7 @@ IMU_ST_SENSOR_DATA stAccelRawData;
 IMU_ST_SENSOR_DATA stMagnRawData;
 
 int speed = 1000;
-int step_division = 1;
+int step_division = 2;
 
 double partial_steps = 0;
 bool curr_dir = CW;
@@ -54,6 +54,7 @@ int init_yaw_stabilization();
 int stabilize_yaw();
 int set_substep(int division);
 int set_speed(int s);
+void pid_update();
 
 bool step_state = true;
 void handle_step(){
@@ -63,6 +64,7 @@ void handle_step(){
   }
   else if (step_state){
     digitalWrite(STEP_PIN, 0 );
+    pid_update();
   }
   step_state = !step_state;
 }
@@ -114,7 +116,8 @@ void loop() {
     imuDataGet( &stAngles, &stGyroRawData, &stAccelRawData, &stMagnRawData);
     prev_time = millis();
     payload_yaw = stAngles.fYaw;
-    Serial.print("Yaw "); Serial.print(payload_yaw); Serial.print("   Partial: "); Serial.println(partial_steps);
+    Serial.print("Yaw "); Serial.print(payload_yaw); Serial.print("   Speed: "); Serial.print(speed); 
+    Serial.print("   Steps Left:"); Serial.print(steps_left); Serial.print("   Partial: "); Serial.println(partial_steps); 
   }
   
   if (!steps_left) {step_lock = false; }
@@ -133,9 +136,10 @@ void loop() {
   }
 
  
-  if ( toggle_yaw_stabilization && !step_lock){
+  if ( toggle_yaw_stabilization){
     stabilize_yaw();
   }
+  
 
   //Poll the serial for user input
   if (Serial.available() > 0) {
@@ -203,6 +207,7 @@ int set_dir(bool dir) {
 int set_speed(int s) {
   if (s < 500 || s > 3000) { return -5;}
   timer1.update(s);
+  speed = s;
   return 0;
 }
 
@@ -282,6 +287,15 @@ int stabilize_yaw(){
   turn_degrees(delta_angle, SYS);
 
   return 0; 
+}
+
+void pid_update(){
+  if (steps_left == 0) return;
+  float s = 0.5*steps_left*steps_left;
+  s = 3000/s;
+  if (s > 3000) s = 3000;
+  if (s < 500) s = 500;
+  set_speed(s);
 }
 
 int set_substep(int division){
