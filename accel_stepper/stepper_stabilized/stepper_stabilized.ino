@@ -1,4 +1,4 @@
-#include <Bonezegei_DRV8825.h>
+
 #include "Waveshare_10Dof-D.h"
 #include <SPI.h>
 #include <IntervalTimer.h>
@@ -23,7 +23,6 @@
 #define USER 0
 #define SYS 1
 
-Bonezegei_DRV8825 stepper(DIR_PIN, STEP_PIN);
 IntervalTimer timer1;
 
 IMU_ST_ANGLES_DATA stAngles;
@@ -31,8 +30,8 @@ IMU_ST_SENSOR_DATA stGyroRawData;
 IMU_ST_SENSOR_DATA stAccelRawData;
 IMU_ST_SENSOR_DATA stMagnRawData;
 
-int speed = 2000;
-int step_division = 4;
+int speed = 1000;
+int step_division = 1;
 
 double partial_steps = 0;
 bool curr_dir = CW;
@@ -54,6 +53,7 @@ int handle_command(String command);
 int init_yaw_stabilization();
 int stabilize_yaw();
 int set_substep(int division);
+int set_speed(int s);
 
 bool step_state = true;
 void handle_step(){
@@ -87,9 +87,6 @@ void setup() {
   //Disables sleep and reset
   digitalWrite(RESET_PIN, HIGH);
   digitalWrite(SLEEP_PIN, HIGH);
-
-  stepper.begin();
-  stepper.setSpeed(2000);
 
   //Motor starts low
   digitalWrite(DIR_PIN, LOW);
@@ -155,6 +152,9 @@ void loop() {
       case -2:
         Serial.println("Error: Command Unrecognized.");
         break;
+      case -5:
+        Serial.println("Error: Speed must be at least 500 and at most 3000.");
+        break;
     }
   }
 }
@@ -182,6 +182,10 @@ int handle_command(String command){
     if (toggle_yaw_stabilization) { toggle_yaw_stabilization = false; }
     else if (!toggle_yaw_stabilization) { toggle_yaw_stabilization = true; }
   }
+  else if (command.startsWith("speed ")) {//i.e. "speed 750"
+    float s = command.substring(6).toFloat();
+    error = set_speed(s);
+  }
   else {
     error = -2;
   }
@@ -193,6 +197,12 @@ int handle_command(String command){
 int set_dir(bool dir) {
   digitalWrite(DIR_PIN, dir);
   curr_dir = dir;
+  return 0;
+}
+
+int set_speed(int s) {
+  if (s < 500 || s > 3000) { return -5;}
+  timer1.update(s);
   return 0;
 }
 
@@ -265,8 +275,8 @@ int stabilize_yaw(){
 
   //Range of IMU is [-180,180]. Example Case: To move from -179 to 180 is 1 degree not -359 degrees 
   if (abs(delta_angle) > 180) {
-    if (delta_angle > 0) { delta_angle -= 360;}
-    if (delta_angle < 0) { delta_angle += 360;}
+    if (delta_angle > 0) { delta_angle -= 360; }
+    else if (delta_angle < 0) { delta_angle += 360; }
   }
 
   turn_degrees(delta_angle, SYS);
