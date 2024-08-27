@@ -60,6 +60,7 @@ String commandPacket;
 boolean newData = false;
 
 volatile int receptionConfirm = 0;
+volatile int ignoreNextConfirm = 0;
 
 // elapsedMillis sendTimer;
 
@@ -95,6 +96,7 @@ void loop() {
   recvCommand();
   commandPacket = commandParser();
   radioRx();
+
 
 }
 
@@ -190,8 +192,10 @@ void radioRx(){
       // queue.dequeue();//TO TEST
     }
     
+    
     // Serial.print("Received: ");
     // Serial.println(receptionConfirm);
+
 
     if (receptionConfirm == 1){
       queue.dequeue();
@@ -199,7 +203,7 @@ void radioRx(){
     }
     
     
-
+    Serial.print("Command sent: ");
     Serial.println(data);
 
     String callsgn = CALLSIGN;
@@ -215,6 +219,11 @@ void radioRx(){
     rf95.waitPacketSent();
     // Serial.println("Sent a reply");
     digitalWrite(LED_BUILTIN, LOW);
+
+    if(ignoreNextConfirm){
+      queue.dequeue();
+      ignoreNextConfirm = 0;
+    }
 
     
   } 
@@ -438,6 +447,19 @@ String commandParser(){
           Serial.print("Set radio timeout for "); Serial.print(floatFromPC); Serial.println(" ms");
           
         }
+        else if(strcmp(messageFromPC,"resetfc") == 0){
+          dat = "18," + (String) floatFromPC;
+          ignoreNextConfirm = 1;
+          queue.enqueue(dat);
+          Serial.println("Reinitializing Flight Computer");
+        }
+        else if(strcmp(messageFromPC,"clearq") == 0){
+          while(!queue.isEmpty()){
+            queue.dequeue();
+          }
+          Serial.println("Cleared command queue");
+        }
+
 
         else {
           String dat = "0,000.00";
@@ -493,6 +515,25 @@ void groundpacketParser(char* receivedPacket, int enableRaw){
     receptionConfirm = strcmp(strtokIndx,"1") == 0 ? 1 : 0; 
     
   }
+
+  strtokIndx = strtok(NULL, ",");
+
+  if(NULL != strtokIndx)
+  {
+    if(enableRaw == 0){
+    Serial.print(", FC RSSI:"); Serial.print(strtokIndx);
+    }
+  }
+
+  strtokIndx = strtok(NULL, ",");
+
+  if(NULL != strtokIndx)
+  {
+    if(enableRaw == 0){
+    Serial.print(", FC SNR:"); Serial.print(strtokIndx);
+    }
+  }
+
 
   strtokIndx = strtok(NULL, ",");
 
@@ -611,23 +652,7 @@ void groundpacketParser(char* receivedPacket, int enableRaw){
     }
   }
 
-  strtokIndx = strtok(NULL, ",");
-    
-  if(NULL != strtokIndx)
-  {
-    if(enableRaw == 0){
-    Serial.print(", RSSI:"); Serial.print(strtokIndx);
-    }
-  }
 
-  strtokIndx = strtok(NULL, ",");
-    
-  if(NULL != strtokIndx)
-  {
-    if(enableRaw == 0){
-    Serial.print(", SNR:"); Serial.print(strtokIndx);
-    }
-  }
 
 
   
