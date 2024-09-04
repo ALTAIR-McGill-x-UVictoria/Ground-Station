@@ -21,9 +21,9 @@
 #define QUEUE_SIZE 10
 
 //Radio pin definitions
-#define RFM95_RST 5
+#define RFM95_RST 20
 #define RFM95_CS 10
-#define RFM95_INT 4
+#define RFM95_INT 21
 
 //LoRa parameters definitions
 #define RF95_FREQ 433.0
@@ -459,6 +459,21 @@ String commandParser(){
           }
           Serial.println("Cleared command queue");
         }
+        else if(strcmp(messageFromPC,"terminate") == 0){
+          dat = "19," + (String) floatFromPC;
+          queue.enqueue(dat);
+          // Serial.print(dat); Serial.print(": ");
+          Serial.println("Linear actuator energized");
+          
+        }
+        else if(strcmp(messageFromPC,"resetactuator") == 0){
+          dat = "20," + (String) floatFromPC;
+          queue.enqueue(dat);
+          // Serial.print(dat); Serial.print(": ");
+          Serial.println("Linear actuator de-energized");
+          
+        }
+        
 
 
         else {
