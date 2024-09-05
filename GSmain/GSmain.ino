@@ -60,6 +60,7 @@ boolean newData = false;
 
 volatile int receptionConfirm = 0;
 volatile int ignoreNextConfirm = 0;
+volatile int32_t FcCommandID = 0;
 
 // elapsedMillis sendTimer;
 
@@ -209,8 +210,8 @@ void radioRx(){
     }
     
 
-    String callsgn = CALLSIGN;
-    data = callsgn + ":" + data;
+  String commandid = FcCommandID;
+    data = commandid + ":" + data;
     const char* tosend = data.c_str();
     
     // Serial.println(tosend);
@@ -510,14 +511,16 @@ void groundpacketParser(char* receivedPacket, int enableRaw){
 
   strtokIndx = strtok(receivedPacket,":");
 
-  #if SHOW_CALLSIGN
+  
+  //COMMAND ID
   if(NULL != strtokIndx)
   {
     if(enableRaw == 0){
+    FcCommandID = atoi(strtokIndx);
     Serial.print(strtokIndx); Serial.print(": ");
     }
   }
-  #endif
+  
 
   // if(enableRaw == 1){
   //   Serial.print(packetCopy);
