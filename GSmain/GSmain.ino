@@ -4,7 +4,6 @@
 // #include <RadioLib.h>
 #include <ArduinoQueue.h>
 #include "Waveshare_10Dof-D.h"
-#include "RadioLogic.h"
 #include <SPI.h>
 #include <RH_RF95.h>
 #include "Waveshare_10Dof-D.h"
@@ -32,7 +31,7 @@
 #define TX_POWER 20
 
 //Show the raw packet received from FC instead of being parsed
-int showAsRawPacket = 0;
+int showAsRawPacket = 1;
 
 
 // Singleton instances
@@ -169,9 +168,10 @@ void radioRx(){
       
 
 
-      Serial.print("RSSI: ");
+      if(showAsRawPacket == 0){Serial.print("RSSI: ");}
       Serial.print(rf95.lastRssi(), DEC);
-      Serial.print(", SNR: ");
+      Serial.print(",");
+      if(showAsRawPacket == 0){Serial.print(" SNR: ");}
       Serial.println(rf95.lastSNR(), DEC);
     }
 
@@ -203,8 +203,11 @@ void radioRx(){
     }
     
     
-    Serial.print("Command sent: ");
-    Serial.println(data);
+    if(showAsRawPacket == 0){
+      Serial.print("Command sent: ");
+      Serial.println(data);
+    }
+    
 
     String callsgn = CALLSIGN;
     data = callsgn + ":" + data;
@@ -213,7 +216,8 @@ void radioRx(){
     // Serial.println(tosend);
 
     // Serial.print("Flightmode: "); Serial.print(toggle ?)
-    Serial.println("=======");
+    if(showAsRawPacket == 0){Serial.println("=======");}
+    
 
     rf95.send((uint8_t *)tosend, 30);
     rf95.waitPacketSent();
