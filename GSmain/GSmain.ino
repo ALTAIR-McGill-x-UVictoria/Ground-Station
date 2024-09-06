@@ -13,7 +13,7 @@
 #define SHOW_CALLSIGN 0 //will show callsign in serial monitor
 
 //Radio debugging without FC
-#define DEBUG_RX 0
+#define DEBUG_RX 1
 #define LOOP_TIMER 1000 
 
 //Queue
@@ -62,7 +62,7 @@ volatile int receptionConfirm = 0;
 volatile int ignoreNextConfirm = 0;
 volatile int32_t FcCommandID = 0;
 
-// elapsedMillis sendTimer;
+elapsedMillis sendTimer;
 
 void setup() {
 
@@ -79,23 +79,23 @@ void setup() {
 
 void loop() {  
 
-  // if(DEBUG_RX == 1){
-  //   if (sendTimer >= LOOP_TIMER){
-  //     recvCommand();
-  //     commandPacket = commandParser();
-  //     radioRx();
-  //     sendTimer = 0;
-  //   }
-  // } else{
-  //   recvCommand();
-  //   commandPacket = commandParser();
-  //   radioRx();
-  // }
+  if(DEBUG_RX == 1){
+    if (sendTimer >= LOOP_TIMER){
+      recvCommand();
+      commandPacket = commandParser();
+      radioRx();
+      sendTimer = 0;
+    }
+  } else{
+    recvCommand();
+    commandPacket = commandParser();
+    radioRx();
+  }
 
 
-  recvCommand();
-  commandPacket = commandParser();
-  radioRx();
+  // recvCommand();
+  // commandPacket = commandParser();
+  // radioRx();
 
 
 }
@@ -155,8 +155,12 @@ void radioRx(){
     
 
     if(DEBUG_RX){
-      char debugMessage[] = "DEBUG PACKET";
+      String str = "";
+      str = str + String(rand()).substring(0,5) + ":0,-26,12,5.69,35.08,-134.84,0.07,-1,-1,-1,0.00,44330.00,0.00,111,160,1,1,1,11.1,1.4\n-22,11";
+      // str = str + String(rand()).substring(0,5) + ":0,-26,12,5.69\n-22,11";
+      char* debugMessage = str.c_str();
       strcpy(buf, debugMessage);
+      
     }
 
     uint8_t len = sizeof(buf);
@@ -167,7 +171,7 @@ void radioRx(){
 
       groundpacketParser((char*) buf, showAsRawPacket);
       
-
+      if(DEBUG_RX){return;}
 
       if(showAsRawPacket == 0){Serial.print("RSSI: ");}
       Serial.print(rf95.lastRssi(), DEC);
@@ -478,7 +482,11 @@ String commandParser(){
           Serial.println("Linear actuator de-energized");
           
         }
-        
+        else if(strcmp(messageFromPC,"debugstop") == 0){
+          //debug command
+          while(1);
+          
+        }
 
 
         else {

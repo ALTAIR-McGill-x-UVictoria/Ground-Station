@@ -8,6 +8,7 @@ import csv
 import threading
 import datetime
 import numpy as np
+import time
 
 class SerialMonitor:
     
@@ -26,12 +27,17 @@ class SerialMonitor:
         self.connection_active = False
         
         
+        
+        
 
     def create_widgets(self):
         
         # self.datalistFC = [tk.StringVar(), tk.StringVar(), tk.StringVar(), tk.StringVar(), tk.StringVar(), tk.StringVar(),tk.StringVar(), tk.StringVar(), tk.StringVar(), tk.StringVar(), tk.StringVar(), tk.StringVar(), tk.StringVar(), tk.StringVar(),tk.StringVar(), tk.StringVar()]
         self.datalistFC = [tk.StringVar() for _ in range(30)]
         self.datalistGS = [tk.StringVar(), tk.StringVar()]
+        
+        self.timeLastReception = time.time()
+    
     
         self.port_combobox_label = ttk.Label(self.master, text="Select Port:")
         self.port_combobox_label.grid(row=0, column=0, padx=10, pady=10)
@@ -50,18 +56,25 @@ class SerialMonitor:
 
         self.disconnect_button = ttk.Button(self.master, text="Disconnect", command=self.disconnect, state=tk.DISABLED)
         self.disconnect_button.grid(row=0, column=4, padx=10, pady=10)
+        
+        # self.refresh_button = ttk.Button(self.master, text="Refresh", command=self.populate_ports, state=tk.DISABLED)
+        # self.refresh_button.grid(row=0, column=5, padx=10, pady=10)
+        
 
-        self.export_txt_button = ttk.Button(self.master, text="Export as TXT", command=self.export_txt, state=tk.DISABLED)
-        self.export_txt_button.grid(row=0, column=5, padx=10, pady=10)
+        self.export_box = ttk.LabelFrame(self.master, text='Export')
+        self.export_box.grid(row=7, column=1, columnspan=2, sticky = tk.W+tk.E)
+        
+        self.export_txt_button = ttk.Button(self.export_box, text="Export as TXT", command=self.export_txt, state=tk.DISABLED)
+        self.export_txt_button.grid(row=0, column=0, padx=10, pady=10)
 
-        self.export_csv_button = ttk.Button(self.master, text="Export as CSV", command=self.export_csv, state=tk.DISABLED)
-        self.export_csv_button.grid(row=0, column=6, padx=10, pady=10)
+        self.export_csv_button = ttk.Button(self.export_box, text="Export as CSV", command=self.export_csv, state=tk.DISABLED)
+        self.export_csv_button.grid(row=0, column=1, padx=10, pady=10)
 
-        self.export_xml_button = ttk.Button(self.master, text="Export as XML", command=self.export_xml, state=tk.DISABLED)
-        self.export_xml_button.grid(row=0, column=7, padx=10, pady=10)
+        self.export_xml_button = ttk.Button(self.export_box, text="Export as XML", command=self.export_xml, state=tk.DISABLED)
+        self.export_xml_button.grid(row=0, column=2, padx=10, pady=10)
 
         self.log_text = scrolledtext.ScrolledText(self.master, wrap=tk.WORD, width=80, height=30)
-        self.log_text.grid(row=2, column=0, columnspan=6, padx=0, pady=15, rowspan=5)
+        self.log_text.grid(row=2, column=0, columnspan=5, padx=5, pady=15, rowspan=5)
         
         self.command_text = tk.Entry(self.master) 
         self.command_text.grid(row=1, column=1) 
@@ -71,14 +84,20 @@ class SerialMonitor:
         self.send_command_button.grid(row=1, column=0, padx=10, pady=10)
         
         self.ping_button = ttk.Button(self.master, text="Ping", command = self.ping)
-        self.ping_button.grid(row=1, column=3, padx=10, pady=10)
+        self.ping_button.grid(row=1, column=2, padx=5, pady=10)
+        
+        # self.connection_status = tk.Label(self.master, text='Connection:')
+        # self.connection_status.grid(row=1, column=3, padx=0, pady=10, ipady= 8, sticky = tk.W+tk.E)
+        
+        self.connection_status = tk.Label(self.master, text='Disconnected', bg='red', relief='groove',width=15)
+        self.connection_status.grid(row=1, column=3, padx=6, pady=10, ipady= 8, ipadx=25)
         
         
         
         #DATA PARSING
         
         self.datacolumn = ttk.LabelFrame(self.master, text="Parsed Data")
-        self.datacolumn.grid(row=1, column=6, padx=5, pady=5, rowspan=2)
+        self.datacolumn.grid(row=1, column=5, padx=2, pady=0, rowspan=2)
         
         
         #FC signal data
@@ -191,22 +210,29 @@ class SerialMonitor:
         self.led3_value.grid(row=5, column=5, padx=5, pady=5)
         
         self.sd_label = ttk.Label(self.datacolumn, text="LED Brightness:")
-        self.sd_label.grid(row=6, column=1, padx=5, pady=5)
+        self.sd_label.grid(row=6, column=0, padx=5, pady=5)
         
         self.sd_value = ttk.Label(self.datacolumn, textvariable=self.datalistFC[16])
-        self.sd_value.grid(row=6, column=2, padx=5, pady=5)
+        self.sd_value.grid(row=6, column=1, padx=5, pady=5)
         
         #SD status
         self.sd_label = ttk.Label(self.datacolumn, text="SD Write:")
-        self.sd_label.grid(row=6, column=3, padx=5, pady=5)
+        self.sd_label.grid(row=6, column=2, padx=5, pady=5)
         
         self.sd_value = ttk.Label(self.datacolumn, textvariable=self.datalistFC[17])
-        self.sd_value.grid(row=6, column=4, padx=5, pady=5)
+        self.sd_value.grid(row=6, column=3, padx=5, pady=5)
+        
+        #Heating status
+        self.heating_label = ttk.Label(self.datacolumn, text="Heating:")
+        self.heating_label.grid(row=6, column=4, padx=5, pady=5)
+        
+        self.heating_value = ttk.Label(self.datacolumn, textvariable=self.datalistFC[18])
+        self.heating_value.grid(row=6, column=5, padx=5, pady=5)
         
         #CONTROL COMMAND BUTTONS
         
         self.commandcolumn = ttk.LabelFrame(self.master, text="Control")
-        self.commandcolumn.grid(row=3, column=6, padx=5, pady=5, rowspan=2)
+        self.commandcolumn.grid(row=3, column=5, padx=10, pady=10, rowspan=2)
         
         self.led1_toggle = ttk.Button(self.commandcolumn, text="LED #1", command=self.led1)
         self.led1_toggle.grid(row=0, column=0, padx=5, pady=3)
@@ -238,8 +264,8 @@ class SerialMonitor:
         self.ledblink_set = ttk.Button(self.commandcolumn, text="Set", command=self.toggleblink)
         self.ledblink_set.grid(row=2, column=2, padx=0, pady=3, columnspan=1)
         
-        self.ledoff = ttk.Button(self.commandcolumn, text="LEDs OFF", command=self.ledoff)
-        self.ledoff.grid(row=3, column=0, padx=20, pady=3, columnspan=3, sticky = tk.W+tk.E)
+        self.led_off = ttk.Button(self.commandcolumn, text="LEDs OFF", command=self.ledoff)
+        self.led_off.grid(row=3, column=0, padx=20, pady=3, columnspan=3, sticky = tk.W+tk.E)
         
         self.stepperangle_label = ttk.Label(self.commandcolumn, text="Stepper Angle:")
         self.stepperangle_label.grid(row=4, column=0, padx=0, pady=3)
@@ -250,55 +276,123 @@ class SerialMonitor:
         self.stepperangle_set = ttk.Button(self.commandcolumn, text="Set", command=self.setdriverangle)
         self.stepperangle_set.grid(row=4, column=2, padx=0, pady=3, columnspan=1)
         
-        self.zeroangle = ttk.Button(self.commandcolumn, text="Zero Angle", command=self.zeroangle)
-        self.zeroangle.grid(row=5, column=0, padx=5, pady=3, columnspan=1, sticky = tk.W+tk.E)
+        self.zero_angle = ttk.Button(self.commandcolumn, text="Zero Angle", command=self.zeroangle)
+        self.zero_angle.grid(row=5, column=0, padx=5, pady=3, columnspan=1, sticky = tk.W+tk.E)
         
         self.togglestab = ttk.Button(self.commandcolumn, text="Toggle Stabilization", command=self.togglestabilization)
         self.togglestab.grid(row=5, column=1, padx=5, pady=3, columnspan=2, sticky = tk.W+tk.E)
         
         
+        self.sdenable_button = ttk.Button(self.commandcolumn, text="Write to SD", command=self.sdwrite)
+        self.sdenable_button.grid(row=6, column=0, padx=10, pady=3, columnspan=1, sticky = tk.W+tk.E, ipadx=10)
+        
+        self.sddisable_button = ttk.Button(self.commandcolumn, text="Stop", command=self.sdstop)
+        self.sddisable_button.grid(row=6, column=1, padx=10, pady=3, columnspan=1, sticky = tk.W+tk.E)
+        
+        self.sdnewfile_button = ttk.Button(self.commandcolumn, text="New File", command=self.sdnewfile)
+        self.sdnewfile_button.grid(row=6, column=2, padx=10, pady=3, columnspan=1, sticky = tk.W+tk.E)
+        
         #COMMUNICATION COMMAND BUTTONS
         
         self.commcolumn = ttk.LabelFrame(self.master, text="Communication")
-        self.commcolumn.grid(row=0, column=9, padx=5, pady=5, rowspan=3)
+        self.commcolumn.grid(row=1, column=6, padx=5, pady=5, rowspan=2)
         
         self.clearqueue_button = ttk.Button(self.commcolumn, text="Clear Command Queue", command=self.clearqueue)
-        self.clearqueue_button.grid(row=0, column=0, padx=10, pady=3, columnspan=3, sticky = tk.W+tk.E)
+        self.clearqueue_button.grid(row=0, column=0, padx=10, pady=3, columnspan=3, sticky = tk.W+tk.E, ipady=8)
         
         self.flightmode_toggle = ttk.Button(self.commcolumn, text="Toggle Flight Mode", command=self.toggleFlightMode)
-        self.flightmode_toggle.grid(row=1, column=0, padx=10, pady=3, columnspan=3, sticky = tk.W+tk.E)
+        self.flightmode_toggle.grid(row=1, column=0, padx=10, pady=3, columnspan=3, sticky = tk.W+tk.E, ipady=8)
         
         self.resetfc_button = ttk.Button(self.commcolumn, text="Reset Flight Computer", command=self.resetFC)
-        self.resetfc_button.grid(row=2, column=0, padx=10, pady=3, columnspan=3, sticky = tk.W+tk.E)
+        self.resetfc_button.grid(row=2, column=0, padx=10, pady=3, columnspan=3, sticky = tk.W+tk.E, ipady=8)
         
         self.togglepacket_button = ttk.Button(self.commcolumn, text="Toggle Packet Size", command=self.togglepacketsize)
-        self.togglepacket_button.grid(row=3, column=0, padx=10, pady=3, columnspan=3, sticky = tk.W+tk.E)
-        
-        
-        #SD COMMAND BUTTONS
-        
-        self.sdcolumn = ttk.LabelFrame(self.master, text="SD Card")
-        self.sdcolumn.grid(row=2, column=9, padx=5, pady=5, rowspan=5, columnspan=2)
-        
-        self.sdenable_button = ttk.Button(self.sdcolumn, text="Write", command=self.sdwrite)
-        self.sdenable_button.grid(row=0, column=0, padx=10, pady=3, columnspan=1, sticky = tk.W+tk.E)
-        
-        self.sddisable_button = ttk.Button(self.sdcolumn, text="Stop", command=self.sdstop)
-        self.sddisable_button.grid(row=0, column=2, padx=10, pady=3, columnspan=1, sticky = tk.W+tk.E)
+        self.togglepacket_button.grid(row=3, column=0, padx=10, pady=3, columnspan=3, sticky = tk.W+tk.E, ipady=8)
         
         
         
+        #STATUS INDICATOR
+        self.status_indicators = ttk.LabelFrame(self.master, text="Status Indicators")
+        self.status_indicators.grid(row=3, column=6, padx=10, pady=0, rowspan=2, sticky = tk.W+tk.E)
         
+        # self.status_canvas = tk.Canvas(self.status_indicators, width=200, height=10)
+        # self.status_canvas.grid(row=0, column=0,padx=10, pady=3, columnspan=3, sticky = tk.W+tk.E)
+        
+        # self.test_oval = self.status_canvas.create_oval(50,50, 100, 100)
+        # self.status_canvas.itemconfig(self.test_oval, );
+        
+        self.ledintensity_label = ttk.Label(self.status_indicators, text='LED Intensity:')
+        self.ledintensity_label.grid(row=0, column=0, padx=0, pady=2, ipadx=5, ipady=1, columnspan=1)
+        
+        self.ledintensity_bar = ttk.Progressbar(self.status_indicators, orient='horizontal', mode='determinate', length = 170)
+        self.ledintensity_bar.grid(row=0, column=1, padx=0, pady=2, ipadx=5, ipady=1, columnspan=2)
+        
+        self.led1_status = tk.Label(self.status_indicators, text="LED #1", bg='lightgray', width=12)
+        self.led1_status.grid(row=1, column=0, padx=3, pady=3, ipadx=5, ipady=5)
+        
+        self.led2_status = tk.Label(self.status_indicators, text="LED #2", bg='lightgray', width=12)
+        self.led2_status.grid(row=1, column=1, padx=3, pady=3, ipadx=5, ipady=5)
+        
+        self.led3_status = tk.Label(self.status_indicators, text="LED #3", bg='lightgray', width=12)
+        self.led3_status.grid(row=1, column=2, padx=3, pady=3, ipadx=5, ipady=5)
+        
+        self.battery1_voltage_label = ttk.Label(self.status_indicators, text='Main Voltage:')
+        self.battery1_voltage_label.grid(row=2, column=0, padx=0, pady=3, ipadx=5, ipady=3, columnspan=1)
+        
+        self.battery1_voltage_bar = ttk.Progressbar(self.status_indicators, orient='horizontal', mode='determinate', length = 170)
+        self.battery1_voltage_bar.grid(row=2, column=1, padx=0, pady=3, ipadx=5, ipady=3, columnspan=2)
+        # self.battery_voltage_bar['value'] = 100
+        
+        self.battery2_voltage_label = ttk.Label(self.status_indicators, text='Motor Voltage:')
+        self.battery2_voltage_label.grid(row=3, column=0, padx=0, pady=3, ipadx=5, ipady=3, columnspan=1)
+        
+        self.battery2_voltage_bar = ttk.Progressbar(self.status_indicators, orient='horizontal', mode='determinate', length = 170)
+        self.battery2_voltage_bar.grid(row=3, column=1, padx=0, pady=3, ipadx=5, ipady=3, columnspan=2)
+        
+        self.battery3_voltage_label = ttk.Label(self.status_indicators, text='Heating Voltage:')
+        self.battery3_voltage_label.grid(row=4, column=0, padx=0, pady=3, ipadx=5, ipady=5, columnspan=1)
+        
+        self.battery3_voltage_bar = ttk.Progressbar(self.status_indicators, orient='horizontal', mode='determinate', length = 170)
+        self.battery3_voltage_bar.grid(row=4, column=1, padx=0, pady=3, ipadx=5, ipady=3, columnspan=2)
+        
+        self.sd_status = tk.Label(self.status_indicators, text="SD", bg='lightgray', width=12)
+        self.sd_status.grid(row=5, column=0, padx=3, pady=3, ipadx=5, ipady=5)
+        
+        self.heating_status = tk.Label(self.status_indicators, text="Heater", bg='lightgray', width=12)
+        self.heating_status.grid(row=5, column=1, padx=3, pady=3, ipadx=5, ipady=5)
+        
+        self.termination_status = tk.Label(self.status_indicators, text="Termination", bg='lightgray', width=12)
+        self.termination_status.grid(row=5, column=2, padx=3, pady=3, ipadx=5, ipady=5)
+        
+        #command list
+        self.commands = ttk.LabelFrame(self.master, text="All Commands")
+        self.commands.grid(row=5, column=5, padx=5, pady=10, rowspan=6, columnspan=6)
+                
+        commands = [['ping','led1','led2','led3'],['ledoff','ledblink [ms]','ledbright [value]','dangle [value]'],['zeromotor','stepperspeed [value]','togglestab','sdwrite'],['sdstop','sdclear','sdnewfile','togglelong'],['toggleflightmode','setradiotimeout [ms]','clearq','resetfc'],['terminate','resetactuator']]        
+        
+        for col in range(0,6):
+            for index,item in enumerate(commands[col]): 
+                self.column1_labels = ttk.Label(self.commands, text=item)
+                self.column1_labels.grid(row=index, column=col, padx=0, pady=2, ipadx=5, ipady=1, columnspan=1)
+            
+            
+            
         
 
     def populate_ports(self):
-        ports = [port.device for port in serial.tools.list_ports.comports()]
-        self.port_combobox = ttk.Combobox(self.master, values=ports, state="readonly")
+        self.ports = [port.device for port in serial.tools.list_ports.comports()]
+        self.port_combobox = ttk.Combobox(self.master, values=self.ports, state="readonly")
         self.port_combobox.grid(row=0, column=0, padx=10, pady=10)
 
+
     def connect(self):
+        self.populate_ports()
         port = self.port_combobox.get()
         baud = int(self.baud_combobox.get())
+        
+        if(port == ''):
+            port = self.ports[-1]
+        
         try:
             self.ser = Serial(port, baud, timeout=1)
             self.log_text.delete(1.0, tk.END)
@@ -323,6 +417,7 @@ class SerialMonitor:
 
     def disconnect(self):
         self.connection_active = False  # Set the flag to False to stop the reading thread
+        
         if hasattr(self, 'ser') and self.ser.is_open:
             self.ser.close()
         self.connect_button["state"] = tk.NORMAL
@@ -331,33 +426,57 @@ class SerialMonitor:
         self.export_csv_button["state"] = tk.DISABLED
         self.export_xml_button["state"] = tk.DISABLED
         self.log_text.insert(tk.END, "Disconnected\n")
+        
+        #doesnt work
+        self.connection_status['bg'] = 'red'   
+        self.connection_status['text'] = 'Disconnected'
 
     def read_from_port(self):
         while self.connection_active:  # Check the flag in the reading loop
             try:
                 line = self.ser.readline().decode("utf-8")
+                self.updateConnectionStatus()
+                
                 if line:
                     self.log_text.insert(tk.END, line)
                     self.log_text.see(tk.END)
-                    stringdatalist = line.split(',')
+                    self.stringdatalist = line.split(',')
+                    # self.connection_status['bg'] = 'green'
+                    self.timeLastReception = time.time()
                     
-                    if(len(stringdatalist) > 2):
+                    if(len(self.stringdatalist) > 4):
                         
-                        for index,item in enumerate(stringdatalist[0:13]):
+                        for index,item in enumerate(self.stringdatalist[0:13]):
                             self.datalistFC[index].set(item)
                         
-                        self.datalistFC[13].set(stringdatalist[13][0])
-                        self.datalistFC[14].set(stringdatalist[13][1])
-                        self.datalistFC[15].set(stringdatalist[13][2])
+                        self.datalistFC[13].set(self.stringdatalist[13][0])
+                        self.datalistFC[14].set(self.stringdatalist[13][1])
+                        self.datalistFC[15].set(self.stringdatalist[13][2])
                         
-                        self.datalistFC[16].set(stringdatalist[14])
-                        self.datalistFC[17].set(stringdatalist[15])
+                        #new
+                        self.datalistFC[16].set(self.stringdatalist[14])
+                        self.datalistFC[17].set(self.stringdatalist[15])
+                        self.datalistFC[18].set(self.stringdatalist[16])
+                        self.datalistFC[19].set(self.stringdatalist[17])
                         
+                        self.updateStatusIndicators()
                         
-                    elif (len(stringdatalist) == 2):
-                        self.datalistGS[0].set(stringdatalist[0])
-                        self.datalistGS[1].set(stringdatalist[1].strip())
+                    elif(len(self.stringdatalist) == 4):
+                        self.datalistFC[0].set(self.stringdatalist[0])
+                        self.datalistFC[1].set(self.stringdatalist[1])
+                        self.datalistFC[2].set(self.stringdatalist[2])
+                        self.datalistFC[3].set(self.stringdatalist[3].strip())
                         
+                        self.battery1_voltage_bar['value'] = (float(self.stringdatalist[3].strip())/12.6) * 100
+                    
+                    
+                    
+                        
+                    if (len(self.stringdatalist) == 2):
+                        self.datalistGS[0].set(self.stringdatalist[0])
+                        self.datalistGS[1].set(self.stringdatalist[1].strip())
+                    
+                    
                     
             except Exception as e:
                 if self.connection_active:  # Only log errors if the connection is still active
@@ -413,8 +532,42 @@ class SerialMonitor:
         tree = ET.ElementTree(root)
         tree.write(filename)
         self.log_text.insert(tk.END, f"Log exported as XML: {filename}\n")
+
+
+    def updateConnectionStatus(self):
+        if (time.time() - self.timeLastReception > 1.0):
+            self.connection_status['bg'] = 'red'   
+            self.connection_status['text'] = 'Disconnected'
+        else:
+            self.connection_status['bg'] = 'green'
+            self.connection_status['text'] = 'Connected'       
+            
+            
+    def updateStatusIndicators(self):
         
+        #battery voltages
+        self.battery1_voltage_bar['value'] = (float(self.stringdatalist[3].strip())/12.6) * 100
+        self.battery2_voltage_bar['value'] = (float(self.stringdatalist[18].strip())/12.6) * 100
+        self.battery3_voltage_bar['value'] = (float(self.stringdatalist[19].strip())/12.6) * 100
+        
+        #led statuses
+        self.led1_status['bg'] = 'lime green' if self.stringdatalist[13][0] == '1' else 'lightgray'
+        self.led2_status['bg'] = 'royalblue1' if self.stringdatalist[13][1] == '1' else 'lightgray'
+        self.led3_status['bg'] = 'orangered1' if self.stringdatalist[13][2] == '1' else 'lightgray'
+        self.ledintensity_bar['value'] = (float(self.stringdatalist[14].strip())/255) * 100
     
+    
+        #sd
+        self.sd_status['bg'] = 'medium sea green' if self.stringdatalist[15] == '1' else 'lightgray'
+        self.sd_status['text'] = 'SD Writing' if self.stringdatalist[15] == '1' else 'SD'
+    
+        #heating
+        self.heating_status['bg'] = 'orange' if self.stringdatalist[16] == '1' else 'lightgray'
+        self.heating_status['text'] = 'HEATING' if self.stringdatalist[16] == '1' else 'Heater'
+        
+        #termination
+        self.termination_status['bg'] = 'brown1' if self.stringdatalist[17] == '1' else 'lightgray'
+        self.termination_status['text'] = 'TERMINATED' if self.stringdatalist[17] == '1' else 'Termination'
     
 ####### Command Functions #######
     def ping(self):
@@ -526,6 +679,13 @@ class SerialMonitor:
     def sdstop(self):
         try:
             self.ser.write(f"sdstop\n".encode("utf-8"))  
+                
+        except Exception as e:
+            return
+        
+    def sdnewfile(self):
+        try:
+            self.ser.write(f"sdnew\n".encode("utf-8"))  
                 
         except Exception as e:
             return
