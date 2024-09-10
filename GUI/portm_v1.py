@@ -83,8 +83,10 @@ class SerialMonitor:
         self.send_command_button = ttk.Button(self.master, text="Send", command = self.write_to_port)
         self.send_command_button.grid(row=1, column=0, padx=10, pady=10)
         
-        self.ping_button = ttk.Button(self.master, text="Ping", command = self.ping)
-        self.ping_button.grid(row=1, column=2, padx=5, pady=10)
+        self.ping_label = tk.Label(self.master, relief='groove')
+        self.ping_label.grid(row=1, column=2, padx=5, pady=10)
+        self.ping_button = ttk.Button(self.ping_label, text="Ping", command = self.ping)
+        self.ping_button.grid(row=0, column=0, padx=2, pady=2)
         
         # self.connection_status = tk.Label(self.master, text='Connection:')
         # self.connection_status.grid(row=1, column=3, padx=0, pady=10, ipady= 8, sticky = tk.W+tk.E)
@@ -127,11 +129,23 @@ class SerialMonitor:
         self.gssnr_value.grid(row=1, column=4, padx=5, pady=5)
         
         #FC battery voltage
-        self.voltage_label = ttk.Label(self.datacolumn, text="Battery Voltage: ")
-        self.voltage_label.grid(row=2, column=2, padx=5, pady=5)
+        self.voltage_label = ttk.Label(self.datacolumn, text="Main Voltage: ")
+        self.voltage_label.grid(row=2, column=0, padx=5, pady=5)
         
         self.voltage_value = ttk.Label(self.datacolumn, textvariable=self.datalistFC[3])
-        self.voltage_value.grid(row=2, column=3, padx=5, pady=5)
+        self.voltage_value.grid(row=2, column=1, padx=5, pady=5)
+        
+        self.voltage_motor_label = ttk.Label(self.datacolumn, text="Motor Voltage: ")
+        self.voltage_motor_label.grid(row=2, column=2, padx=5, pady=5)
+        
+        self.voltage_motor_value = ttk.Label(self.datacolumn, textvariable=self.datalistFC[20])
+        self.voltage_motor_value.grid(row=2, column=3, padx=5, pady=5)
+        
+        self.voltage_heating_label = ttk.Label(self.datacolumn, text="Heating Voltage: ")
+        self.voltage_heating_label.grid(row=2, column=4, padx=5, pady=5)
+        
+        self.voltage_heating_value = ttk.Label(self.datacolumn, textvariable=self.datalistFC[21])
+        self.voltage_heating_value.grid(row=2, column=5, padx=5, pady=5)
         
         #FC angle data
         self.pitch_label = ttk.Label(self.datacolumn, text="Roll:")
@@ -386,7 +400,7 @@ class SerialMonitor:
 
 
     def connect(self):
-        self.populate_ports()
+        # self.populate_ports()
         port = self.port_combobox.get()
         baud = int(self.baud_combobox.get())
         
@@ -458,6 +472,8 @@ class SerialMonitor:
                         self.datalistFC[17].set(self.stringdatalist[15])
                         self.datalistFC[18].set(self.stringdatalist[16])
                         self.datalistFC[19].set(self.stringdatalist[17])
+                        self.datalistFC[20].set(self.stringdatalist[18])
+                        self.datalistFC[21].set(self.stringdatalist[19].strip())
                         
                         self.updateStatusIndicators()
                         
@@ -468,6 +484,8 @@ class SerialMonitor:
                         self.datalistFC[3].set(self.stringdatalist[3].strip())
                         
                         self.battery1_voltage_bar['value'] = (float(self.stringdatalist[3].strip())/12.6) * 100
+                        #ping
+                        self.ping_label['bg'] = 'lightgreen' if self.stringdatalist[0][-1] == '1' else 'white'
                     
                     
                     
@@ -535,7 +553,7 @@ class SerialMonitor:
 
 
     def updateConnectionStatus(self):
-        if (time.time() - self.timeLastReception > 1.0):
+        if (time.time() - self.timeLastReception > 3.0):
             self.connection_status['bg'] = 'red'   
             self.connection_status['text'] = 'Disconnected'
         else:
@@ -545,10 +563,13 @@ class SerialMonitor:
             
     def updateStatusIndicators(self):
         
+        #ping
+        self.ping_label['bg'] = 'lightgreen' if self.stringdatalist[0][-1] == '1' else 'white'
+        
         #battery voltages
         self.battery1_voltage_bar['value'] = (float(self.stringdatalist[3].strip())/12.6) * 100
         self.battery2_voltage_bar['value'] = (float(self.stringdatalist[18].strip())/12.6) * 100
-        self.battery3_voltage_bar['value'] = (float(self.stringdatalist[19].strip())/12.6) * 100
+        self.battery3_voltage_bar['value'] = (float(self.stringdatalist[19].strip())/4.2) * 100
         
         #led statuses
         self.led1_status['bg'] = 'lime green' if self.stringdatalist[13][0] == '1' else 'lightgray'
@@ -685,7 +706,7 @@ class SerialMonitor:
         
     def sdnewfile(self):
         try:
-            self.ser.write(f"sdnew\n".encode("utf-8"))  
+            self.ser.write(f"sdnewfile\n".encode("utf-8"))  
                 
         except Exception as e:
             return

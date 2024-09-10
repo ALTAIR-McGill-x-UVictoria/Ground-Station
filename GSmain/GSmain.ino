@@ -13,7 +13,7 @@
 #define SHOW_CALLSIGN 0 //will show callsign in serial monitor
 
 //Radio debugging without FC
-#define DEBUG_RX 1
+#define DEBUG_RX 0
 #define LOOP_TIMER 1000 
 
 //Queue
@@ -60,7 +60,7 @@ boolean newData = false;
 
 volatile int receptionConfirm = 0;
 volatile int ignoreNextConfirm = 0;
-volatile int32_t FcCommandID = 0;
+String FcCommandID = "X";
 
 elapsedMillis sendTimer;
 
@@ -482,11 +482,28 @@ String commandParser(){
           Serial.println("Linear actuator de-energized");
           
         }
+        else if(strcmp(messageFromPC,"sdnewfile") == 0){
+          dat = "21," + (String) floatFromPC;
+          queue.enqueue(dat);
+          // Serial.print(dat); Serial.print(": ");
+          Serial.println("Created new SD card file");
+          
+        }
+        else if(strcmp(messageFromPC,"debugheating") == 0){
+          dat = "22," + (String) floatFromPC;
+          queue.enqueue(dat);
+          // Serial.print(dat); Serial.print(": ");
+          Serial.println("Temporarily toggled heating");
+          
+        }
+
+
         else if(strcmp(messageFromPC,"debugstop") == 0){
           //debug command
           while(1);
           
         }
+
 
 
         else {
@@ -523,10 +540,10 @@ void groundpacketParser(char* receivedPacket, int enableRaw){
   //COMMAND ID
   if(NULL != strtokIndx)
   {
-    if(enableRaw == 0){
-    FcCommandID = atoi(strtokIndx);
-    Serial.print(strtokIndx); Serial.print(": ");
-    }
+    
+    FcCommandID = strtokIndx;
+    // Serial.print(strtokIndx); Serial.print(": ");
+    
   }
   
 
