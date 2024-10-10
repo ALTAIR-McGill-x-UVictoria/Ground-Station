@@ -558,8 +558,9 @@ class SerialMonitor:
             self.connection_status['text'] = 'Disconnected'
         else:
             self.connection_status['bg'] = 'green'
-            self.connection_status['text'] = 'Connected'       
+            self.connection_status['text'] = 'Connected'     
             
+        
             
     def updateStatusIndicators(self):
         
