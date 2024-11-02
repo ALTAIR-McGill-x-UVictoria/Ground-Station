@@ -28,6 +28,7 @@ class SerialMonitor:
         self.connection_active = False
         
         self.csvpath = 'gpsdata.csv'
+        # self.csvpath = 'C:/Users/bdagn/OneDrive - McGill University/2024-2025'
         self.gpsdf = pd.DataFrame(columns=['Latitude','Longitude','Altitude'])
         # self.gpsdf['Latitude']
         
