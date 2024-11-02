@@ -9,6 +9,7 @@ import threading
 import datetime
 import numpy as np
 import time
+import pandas as pd
 
 class SerialMonitor:
     
@@ -26,7 +27,9 @@ class SerialMonitor:
         # Flag to indicate if the serial connection is active
         self.connection_active = False
         
-        
+        self.csvpath = 'gpsdata.csv'
+        self.gpsdf = pd.DataFrame(columns=['Latitude','Longitude','Altitude'])
+        # self.gpsdf['Latitude']
         
         
 
@@ -144,7 +147,7 @@ class SerialMonitor:
         self.voltage_heating_label = ttk.Label(self.datacolumn, text="Heating Voltage: ")
         self.voltage_heating_label.grid(row=2, column=4, padx=5, pady=5)
         
-        self.voltage_heating_value = ttk.Label(self.datacolumn, textvariable=self.datalistFC[21])
+        self.voltage_heating_value = ttk.Label(self.datacolumn, text='0')
         self.voltage_heating_value.grid(row=2, column=5, padx=5, pady=5)
         
         #FC angle data
@@ -320,7 +323,7 @@ class SerialMonitor:
         self.resetfc_button = ttk.Button(self.commcolumn, text="Reset Flight Computer", command=self.resetFC)
         self.resetfc_button.grid(row=2, column=0, padx=10, pady=3, columnspan=3, sticky = tk.W+tk.E, ipady=8)
         
-        self.togglepacket_button = ttk.Button(self.commcolumn, text="Toggle Packet Size", command=self.togglepacketsize)
+        self.togglepacket_button = ttk.Button(self.commcolumn, text="Toggle Packet Size", command=None)
         self.togglepacket_button.grid(row=3, column=0, padx=10, pady=3, columnspan=3, sticky = tk.W+tk.E, ipady=8)
         
         
@@ -328,6 +331,7 @@ class SerialMonitor:
         #STATUS INDICATOR
         self.status_indicators = ttk.LabelFrame(self.master, text="Status Indicators")
         self.status_indicators.grid(row=3, column=6, padx=10, pady=0, rowspan=2, sticky = tk.W+tk.E)
+        # self.status_indicators.grid(row=4, column=5, padx=10, pady=0, rowspan=2, sticky = tk.W+tk.E)
         
         # self.status_canvas = tk.Canvas(self.status_indicators, width=200, height=10)
         # self.status_canvas.grid(row=0, column=0,padx=10, pady=3, columnspan=3, sticky = tk.W+tk.E)
@@ -379,18 +383,40 @@ class SerialMonitor:
         self.termination_status.grid(row=5, column=2, padx=3, pady=3, ipadx=5, ipady=5)
         
         #command list
-        self.commands = ttk.LabelFrame(self.master, text="All Commands")
-        self.commands.grid(row=5, column=5, padx=5, pady=10, rowspan=6, columnspan=6)
+        # self.commands = ttk.LabelFrame(self.master, text="All Commands")
+        # self.commands.grid(row=5, column=5, padx=5, pady=10, rowspan=6, columnspan=6)
                 
-        commands = [['ping','led1','led2','led3'],['ledoff','ledblink [ms]','ledbright [value]','dangle [value]'],['zeromotor','stepperspeed [value]','togglestab','sdwrite'],['sdstop','sdclear','sdnewfile','togglelong'],['toggleflightmode','setradiotimeout [ms]','clearq','resetfc'],['terminate','resetactuator']]        
+        # commands = [['ping','led1','led2','led3'],['ledoff','ledblink [ms]','ledbright [value]','dangle [value]'],['zeromotor','stepperspeed [value]','togglestab','sdwrite'],['sdstop','sdclear','sdnewfile','togglelong'],['toggleflightmode','setradiotimeout [ms]','clearq','resetfc'],['terminate','resetactuator']]        
         
-        for col in range(0,6):
-            for index,item in enumerate(commands[col]): 
-                self.column1_labels = ttk.Label(self.commands, text=item)
-                self.column1_labels.grid(row=index, column=col, padx=0, pady=2, ipadx=5, ipady=1, columnspan=1)
+        # for col in range(0,6):
+            # for index,item in enumerate(commands[col]): 
+                # self.column1_labels = ttk.Label(self.commands, text=item)
+                # self.column1_labels.grid(row=index, column=col, padx=0, pady=2, ipadx=5, ipady=1, columnspan=1)
+        
+        # GPS data
+        self.gpsdata = ttk.LabelFrame(self.master, text="GPS")
+        self.gpsdata.grid(row=5, column=5, padx=5, pady=10, rowspan=6, columnspan=6)
+        
+        self.lattext = ttk.Label(self.gpsdata,text='Latitude')
+        self.lattext.grid(row=0,column=0,padx=0, pady=2, ipadx=5, ipady=1, columnspan=1)
+        
+        self.lontext = ttk.Label(self.gpsdata,text='Longitude')
+        self.lontext.grid(row=0,column=1,padx=0, pady=2, ipadx=5, ipady=1, columnspan=1)
+        
+        self.alttext = ttk.Label(self.gpsdata, text='GPS altitude')
+        self.alttext.grid(row=0,column=2,padx=0, pady=2, ipadx=5, ipady=1, columnspan=1)
+        
+        self.lat = ttk.Label(self.gpsdata, textvariable=self.datalistFC[22])
+        self.lat.grid(row=1,column=0,padx=0, pady=2, ipadx=5, ipady=1, columnspan=1)
+        
+        
+        self.lon = ttk.Label(self.gpsdata, textvariable=self.datalistFC[23])
+        self.lon.grid(row=1,column=1,padx=0, pady=2, ipadx=5, ipady=1, columnspan=1)
+        
+        self.gpsalt = ttk.Label(self.gpsdata, textvariable=self.datalistFC[24])
+        self.gpsalt.grid(row=1,column=2,padx=0, pady=2, ipadx=5, ipady=1, columnspan=1)
             
-            
-            
+        # print(self.datalistFC[23],self.datalistFC[24])
         
 
     def populate_ports(self):
@@ -458,7 +484,7 @@ class SerialMonitor:
                     # self.connection_status['bg'] = 'green'
                     self.timeLastReception = time.time()
                     
-                    if(len(self.stringdatalist) > 4):
+                    if(len(self.stringdatalist) > 8):
                         
                         for index,item in enumerate(self.stringdatalist[0:13]):
                             self.datalistFC[index].set(item)
@@ -473,26 +499,50 @@ class SerialMonitor:
                         self.datalistFC[18].set(self.stringdatalist[16])
                         self.datalistFC[19].set(self.stringdatalist[17])
                         self.datalistFC[20].set(self.stringdatalist[18])
-                        self.datalistFC[21].set(self.stringdatalist[19].strip())
                         
+                        self.datalistFC[21].set(self.stringdatalist[19]) #callsign
+                        
+                        self.datalistFC[22].set(self.stringdatalist[20]) #lat
+                        self.datalistFC[23].set(self.stringdatalist[21]) #lon
+                        self.datalistFC[24].set(self.stringdatalist[22].strip()) #gpsalt
+                        # self.datalistFC[22].set(self.stringdatalist[20])
+                        
+                        # self.gpsdf['Latitude'].iloc[len(self.gpsdf)] = self.stringdatalist[20]
+                        # self.gpsdf['Longitude'] = self.stringdatalist[21]
+                        self.gpsdf.loc[len(self.gpsdf)] = [self.stringdatalist[20],self.stringdatalist[21],self.stringdatalist[22].strip()]
+                        self.gpsdf.to_csv(self.csvpath)
+                        # print(str(self.stringdatalist[19]),str(self.stringdatalist[20]),str(self.stringdatalist[21]))
                         self.updateStatusIndicators()
                         
-                    elif(len(self.stringdatalist) == 4):
+                        
+                        
+                        
+                        
+                    elif(len(self.stringdatalist) == 8):
                         self.datalistFC[0].set(self.stringdatalist[0])
                         self.datalistFC[1].set(self.stringdatalist[1])
                         self.datalistFC[2].set(self.stringdatalist[2])
-                        self.datalistFC[3].set(self.stringdatalist[3].strip())
+                        self.datalistFC[3].set(self.stringdatalist[3])
                         
-                        self.battery1_voltage_bar['value'] = (float(self.stringdatalist[3].strip())/12.6) * 100
+                        self.datalistFC[22].set(self.stringdatalist[4]) #latitude
+                        self.datalistFC[23].set(self.stringdatalist[5]) #longitude
+                        self.datalistFC[24].set(self.stringdatalist[6]) #gpsalt
+                        self.datalistFC[21].set(self.stringdatalist[7]) #callsign
+                        
+                        self.gpsdf.loc[len(self.gpsdf)] = [self.stringdatalist[4],self.stringdatalist[5],self.stringdatalist[6]]
+                        self.gpsdf.to_csv(self.csvpath)
+                        
+                        # self.battery1_voltage_bar['value'] = (float(self.stringdatalist[3].strip())/12.6) * 100
                         #ping
-                        self.ping_label['bg'] = 'lightgreen' if self.stringdatalist[0][-1] == '1' else 'white'
-                    
+                        
+                        # self.ping_label['bg'] = 'lightgreen' if self.stringdatalist[0][-1] == '1' else 'white'
+                        
                     
                     
                         
-                    if (len(self.stringdatalist) == 2):
-                        self.datalistGS[0].set(self.stringdatalist[0])
-                        self.datalistGS[1].set(self.stringdatalist[1].strip())
+                    # if (len(self.stringdatalist) == 2):
+                    #     self.datalistGS[0].set(self.stringdatalist[0])
+                    #     self.datalistGS[1].set(self.stringdatalist[1].strip())
                     
                     
                     
@@ -568,15 +618,15 @@ class SerialMonitor:
         self.ping_label['bg'] = 'lightgreen' if self.stringdatalist[0][-1] == '1' else 'white'
         
         #battery voltages
-        self.battery1_voltage_bar['value'] = (float(self.stringdatalist[3].strip())/12.6) * 100
-        self.battery2_voltage_bar['value'] = (float(self.stringdatalist[18].strip())/12.6) * 100
-        self.battery3_voltage_bar['value'] = (float(self.stringdatalist[19].strip())/4.2) * 100
+        # self.battery1_voltage_bar['value'] = (float(self.stringdatalist[3].strip())/12.6) * 100
+        # self.battery2_voltage_bar['value'] = (float(self.stringdatalist[18].strip())/12.6) * 100
+        # self.battery3_voltage_bar['value'] = (float(self.stringdatalist[19].strip())/4.2) * 100
         
         #led statuses
         self.led1_status['bg'] = 'lime green' if self.stringdatalist[13][0] == '1' else 'lightgray'
         self.led2_status['bg'] = 'royalblue1' if self.stringdatalist[13][1] == '1' else 'lightgray'
         self.led3_status['bg'] = 'orangered1' if self.stringdatalist[13][2] == '1' else 'lightgray'
-        self.ledintensity_bar['value'] = (float(self.stringdatalist[14].strip())/255) * 100
+        # self.ledintensity_bar['value'] = (float(self.stringdatalist[14].strip())/255) * 100
     
     
         #sd
@@ -590,6 +640,8 @@ class SerialMonitor:
         #termination
         self.termination_status['bg'] = 'brown1' if self.stringdatalist[17] == '1' else 'lightgray'
         self.termination_status['text'] = 'TERMINATED' if self.stringdatalist[17] == '1' else 'Termination'
+        
+        
     
 ####### Command Functions #######
     def ping(self):
