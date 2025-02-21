@@ -1,12 +1,8 @@
 //Ground Station Main
 
-
-// #include <RadioLib.h>
 #include <ArduinoQueue.h>
-#include "Waveshare_10Dof-D.h"
 #include <SPI.h>
 #include <RH_RF95.h>
-#include "Waveshare_10Dof-D.h"
 
 //Callsign
 #define CALLSIGN "VA2ETD"
@@ -38,11 +34,7 @@ int showAsRawPacket = 1;
 RH_RF95 rf95(RFM95_CS, RFM95_INT);
 ArduinoQueue<String> queue(QUEUE_SIZE);
 
-IMU_ST_ANGLES_DATA stAngles;
-IMU_ST_SENSOR_DATA stGyroRawData;
-IMU_ST_SENSOR_DATA stAccelRawData;
-IMU_ST_SENSOR_DATA stMagnRawData;
-int32_t s32PressureVal = 0, s32TemperatureVal = 0, s32AltitudeVal = 0;
+
 
 //Command parser variables
 const byte numChars = 32;
