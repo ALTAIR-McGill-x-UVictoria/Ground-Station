@@ -8,6 +8,7 @@ import pyqtgraph as pg
 from datetime import datetime
 import queue
 import threading
+import os
 
 class GroundStationGUI(QMainWindow):
     MAP_HTML = """
@@ -61,6 +62,10 @@ class GroundStationGUI(QMainWindow):
         self.rssi_data = []
         self.snr_data = []
         self.ack_data = []
+
+        # Add these lines after other initializations
+        self.log_file = None
+        self.is_logging = False
         
         # Setup update timer
         self.timer = QTimer()
@@ -187,10 +192,20 @@ class GroundStationGUI(QMainWindow):
         self.data_display.setMinimumHeight(100)  # Set minimum height
         raw_data_layout.addWidget(self.data_display)
         
+        # Add button layout
+        button_layout = QHBoxLayout()
+        
         # Add clear button
         clear_button = QPushButton("Clear")
         clear_button.clicked.connect(self.data_display.clear)
-        raw_data_layout.addWidget(clear_button)
+        button_layout.addWidget(clear_button)
+        
+        # Add log button
+        self.log_button = QPushButton("Start Logging")
+        self.log_button.clicked.connect(self.toggle_logging)
+        button_layout.addWidget(self.log_button)
+        
+        raw_data_layout.addLayout(button_layout)
         
         raw_data_group.setLayout(raw_data_layout)
         left_layout.addWidget(raw_data_group)
@@ -363,6 +378,13 @@ class GroundStationGUI(QMainWindow):
         while not self.serial_queue.empty():
             try:
                 line = self.serial_queue.get_nowait()
+                
+                # Log raw data to file if logging is enabled
+                if self.is_logging and self.log_file:
+                    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+                    self.log_file.write(f"[{timestamp}] {line}\n")
+                    self.log_file.flush()  # Ensure data is written immediately
+                
                 # Validate and clean the data
                 line = ''.join(c for c in line if c.isprintable() or c in [',', '.', '-'])
                 
@@ -567,6 +589,30 @@ class GroundStationGUI(QMainWindow):
         """Update status display with timestamp."""
         timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
         self.data_display.append(f"[{timestamp}] {message}")
+
+    def toggle_logging(self):
+        """Toggle serial data logging to file."""
+        if not self.is_logging:
+            try:
+                # Create filename with timestamp
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                path = "logs"
+                if not os.path.exists(path):
+                    os.makedirs(path)
+                filename = f"{path}/serial_log_{timestamp}.txt"
+                self.log_file = open(filename, 'w')
+                self.is_logging = True
+                self.log_button.setText("Stop Logging")
+                self.data_display.append(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Started logging to {filename}")
+            except Exception as e:
+                QMessageBox.critical(self, "Logging Error", f"Could not create log file: {str(e)}")
+        else:
+            if self.log_file:
+                self.log_file.close()
+                self.log_file = None
+            self.is_logging = False
+            self.log_button.setText("Start Logging")
+            self.data_display.append(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Stopped logging")
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)

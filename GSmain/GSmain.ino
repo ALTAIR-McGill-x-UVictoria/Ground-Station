@@ -174,57 +174,19 @@ void radioRx(){
 
      // Send a reply
     String data;
-    // byte data;
-    // Serial.println(queue.item_count());  
-
-    if(queue.isEmpty() != 1){
-
-      data = queue.getHead();
-      // Serial.println("here");
-      // Serial.println(data);      
-    
-    } 
-    else {
-      data = "0,000.00";
-      // queue.dequeue();//TO TEST
+    if(!queue.isEmpty()) {
+        data = queue.dequeue();
+    } else {
+        data = "0,0.00"; // Simple command,argument format
     }
     
-    
-    // Serial.print("Received: ");
-    // Serial.println(receptionConfirm);
-
-
-    if (receptionConfirm == 1){
-      queue.dequeue();
-      data = "0,000.00";
-    }
-    
-    
-    if(showAsRawPacket == 0){
-      Serial.print("Command sent: ");
-      Serial.println(data);
-    }
-    
-
-  String commandid = FcCommandID;
-    data = commandid + ":" + data;
+    // Don't append telemetry data
     const char* tosend = data.c_str();
-    
-    // Serial.println(tosend);
-
-    // Serial.print("Flightmode: "); Serial.print(toggle ?)
-    if(showAsRawPacket == 0){Serial.println("=======");}
-    
-
-    rf95.send((uint8_t *)tosend, 30);
+    rf95.send((uint8_t *)tosend, strlen(tosend));
     rf95.waitPacketSent();
     // Serial.println("Sent a reply");
     digitalWrite(LED_BUILTIN, LOW);
 
-    if(ignoreNextConfirm){
-      queue.dequeue();
-      ignoreNextConfirm = 0;
-    }
 
     
   } 
