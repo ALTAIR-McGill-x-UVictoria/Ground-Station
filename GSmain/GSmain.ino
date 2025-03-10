@@ -29,6 +29,8 @@
 //Show the raw packet received from FC instead of being parsed
 int showAsRawPacket = 1;
 
+// Add at the top with other global variables
+unsigned long lastPacketTime = 0;
 
 // Singleton instances
 RH_RF95 rf95(RFM95_CS, RFM95_INT);
@@ -159,17 +161,30 @@ void radioRx(){
 
     if (rf95.recv(buf, &len) || DEBUG_RX) {
       digitalWrite(LED_BUILTIN, HIGH);
-      // RH_RF95::printBuffer("Received: ", buf, len);
+      
+      // Calculate time since last packet
+      unsigned long currentTime = millis();
+      unsigned long timeSinceLastPacket = currentTime - lastPacketTime;
+      lastPacketTime = currentTime;
 
       groundpacketParser((char*) buf, showAsRawPacket);
       
       if(DEBUG_RX){return;}
 
-      if(showAsRawPacket == 0){Serial.print("RSSI: ");}
+      if(showAsRawPacket == 0) {
+          Serial.print("RSSI: ");
+      }
       Serial.print(rf95.lastRssi(), DEC);
       Serial.print(",");
-      if(showAsRawPacket == 0){Serial.print(" SNR: ");}
-      Serial.println(rf95.lastSNR(), DEC);
+      if(showAsRawPacket == 0) {
+          Serial.print(" SNR: ");
+      }
+      Serial.print(rf95.lastSNR(), DEC);
+      Serial.print(",");
+      if(showAsRawPacket == 0) {
+          Serial.print(" Delta t: ");
+      }
+      Serial.println(timeSinceLastPacket);
     }
 
      // Send a reply

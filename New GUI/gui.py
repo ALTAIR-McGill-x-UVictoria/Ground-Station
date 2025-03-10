@@ -1,14 +1,23 @@
 import sys
 import serial
 from PyQt5.QtWidgets import *
-from PyQt5.QtCore import QTimer, Qt, QUrl
+from PyQt5.QtCore import QTimer, Qt, QUrl, QPoint, QRectF  # Add QPoint here
 from PyQt5.QtWebEngineWidgets import QWebEngineView
-from PyQt5.QtGui import QPalette, QColor, QTextCursor  # Add QTextCursor here
+from PyQt5.QtGui import (
+    QPalette, QColor, QTextCursor, QPainter, QBrush, 
+    QPen, QFont
+)
 import pyqtgraph as pg
 from datetime import datetime
 import queue
 import threading
 import os
+import random
+from math import sin, cos, radians, atan2, degrees
+
+# Add these imports at the top of the file
+from PyQt5.QtGui import QPainter, QColor, QBrush, QPen, QFont
+from PyQt5.QtCore import Qt, QRectF
 
 class GroundStationGUI(QMainWindow):
     MAP_HTML = """
@@ -31,11 +40,34 @@ class GroundStationGUI(QMainWindow):
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 attribution: '© OpenStreetMap contributors'
             }).addTo(map);
+            
             var marker = L.marker([0, 0]).addTo(map);
+            var pathLine = L.polyline([], {
+                color: 'red',
+                weight: 3,
+                opacity: 0.7
+            }).addTo(map);
+            
+            var followMarker = true;
+            var coordinates = [];
             
             function updateMarker(lat, lon) {
                 marker.setLatLng([lat, lon]);
-                map.setView([lat, lon]);
+                coordinates.push([lat, lon]);
+                pathLine.setLatLngs(coordinates);
+                
+                if (followMarker) {
+                    map.setView([lat, lon]);
+                }
+            }
+            
+            function setFollowMarker(follow) {
+                followMarker = follow;
+            }
+            
+            function clearPath() {
+                coordinates = [];
+                pathLine.setLatLngs([]);
             }
         </script>
     </body>
@@ -44,7 +76,7 @@ class GroundStationGUI(QMainWindow):
     
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Flight Computer Ground Station")
+        self.setWindowTitle("HAB Ground Station")
         self.setGeometry(100, 100, 1200, 800)
         
         # Initialize serial connection
@@ -71,6 +103,30 @@ class GroundStationGUI(QMainWindow):
         self.timer = QTimer()
         self.timer.timeout.connect(self.update_plots)
         self.timer.start(100)  # Update every 100ms
+
+        # Check command line arguments for auto-connect
+        for arg in sys.argv:
+            if arg.upper().startswith('COM'):
+                # Set the port selector to the specified COM port
+                self.port_selector.setCurrentText(arg.upper())
+                # Create a timer to connect after GUI is shown
+                QTimer.singleShot(500, self.auto_connect)
+                break
+
+        self.gps_simulation = False
+        self.sim_lat = 45.493643
+        self.sim_lon = -73.583182
+        self.sim_angle = 0
+        self.sim_timer = QTimer()
+        self.sim_timer.timeout.connect(self.update_sim_gps)
+        
+        # Check if GPS simulation is enabled via command line
+        if len(sys.argv) > 1 and sys.argv[1].lower() == 'testgps':
+            self.gps_simulation = True
+            self.sim_timer.start(1000)  # Update every second
+
+        self.last_gps_lat = None
+        self.last_gps_lon = None
 
     def setup_ui(self):
         # Create main widget and layout
@@ -125,14 +181,59 @@ class GroundStationGUI(QMainWindow):
         self.pressure_line = self.pressure_plot.plot(pen='g')
         plots_layout.addWidget(self.pressure_plot, 1, 0)
         
+        # Add control buttons for plots
+        plot_controls = QHBoxLayout()
+        
+        # Add clear button
+        clear_plots_button = QPushButton("Clear Plots")
+        clear_plots_button.clicked.connect(self.clear_plots)
+        clear_plots_button.setStyleSheet("""
+            QPushButton {
+                background-color: #2a2a2a;
+                color: #ffffff;
+                padding: 5px 10px;
+                border: 1px solid #3a3a3a;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #3a3a3a;
+            }
+        """)
+        plot_controls.addWidget(clear_plots_button)
+        
+        plot_controls.addStretch()  # Add stretch to keep button left-aligned
+        plots_layout.addLayout(plot_controls, 2, 0, 1, 2)  # Span both columns
+        
         # Create dashboard tab
         dashboard_tab = QWidget()
         dashboard_layout = QGridLayout(dashboard_tab)
+        dashboard_layout.setSpacing(10)
         
-        # Create categorized status indicators
-        self.status_widgets = {}
+        # Navigation Data Section (now top left)
+        nav_group = QGroupBox("Navigation")
+        nav_layout = QGridLayout()
+        nav_layout.setSpacing(15)
         
-        # Flight Data Section
+        # Add digital clock at the top
+        self.gps_clock = DigitalClockWidget()
+        nav_layout.addWidget(self.gps_clock, 0, 0, 1, 2)
+        
+        # Add compass widget
+        self.compass = CompassWidget()
+        nav_layout.addWidget(self.compass, 1, 0, 2, 2)
+        
+        # Add speed dials
+        speed_dials_layout = QHBoxLayout()
+        self.ground_speed_dial = SpeedDialWidget("Ground Speed", "m/s", max_value=50)
+        self.vertical_speed_dial = SpeedDialWidget("Vertical Speed", "m/s", max_value=20)
+        speed_dials_layout.addWidget(self.ground_speed_dial)
+        speed_dials_layout.addWidget(self.vertical_speed_dial)
+        nav_layout.addLayout(speed_dials_layout, 3, 0, 1, 2)
+        
+        nav_group.setLayout(nav_layout)
+        dashboard_layout.addWidget(nav_group, 0, 0)  # Move to top left
+        
+        # Flight Data Section (now top right)
         flight_group = QGroupBox("Flight Data")
         flight_layout = QGridLayout()
         flight_parameters = [
@@ -143,9 +244,9 @@ class GroundStationGUI(QMainWindow):
         ]
         self.add_parameters_to_layout(flight_parameters, flight_layout)
         flight_group.setLayout(flight_layout)
-        dashboard_layout.addWidget(flight_group, 0, 0)
+        dashboard_layout.addWidget(flight_group, 0, 1)  # Move to top right
         
-        # Radio Status Section
+        # Radio Status Section (now bottom left)
         radio_group = QGroupBox("Radio Status")
         radio_layout = QGridLayout()
         radio_parameters = [
@@ -156,9 +257,9 @@ class GroundStationGUI(QMainWindow):
         ]
         self.add_parameters_to_layout(radio_parameters, radio_layout)
         radio_group.setLayout(radio_layout)
-        dashboard_layout.addWidget(radio_group, 0, 1)
+        dashboard_layout.addWidget(radio_group, 1, 0)  # Move to bottom left
         
-        # System Status Section
+        # System Status Section (now bottom right)
         system_group = QGroupBox("System Status")
         system_layout = QGridLayout()
         system_parameters = [
@@ -167,12 +268,29 @@ class GroundStationGUI(QMainWindow):
             ("ActuatorStatus", "", 1, 0, "Actuator System Status")
         ]
         self.add_parameters_to_layout(system_parameters, system_layout)
+        
+        # Add packet interval label
+        self.last_packet_label = QLabel("Packet Interval: --")
+        self.last_packet_label.setStyleSheet("""
+            QLabel {
+                color: #ff0000;
+                font-family: 'Courier New';
+                font-size: 12px;
+                padding: 5px;
+                border: 1px solid #3a3a3a;
+                border-radius: 4px;
+                background-color: #2a2a2a;
+            }
+        """)
+        system_layout.addWidget(self.last_packet_label, 2, 0, 1, 2)
+        
         system_group.setLayout(system_layout)
-        dashboard_layout.addWidget(system_group, 1, 0)
+        dashboard_layout.addWidget(system_group, 1, 1)  # Move to bottom right
         
         # Add tabs to tab widget
-        self.tab_widget.addTab(plots_tab, "Plots")
         self.tab_widget.addTab(dashboard_tab, "Dashboard")
+        self.tab_widget.addTab(plots_tab, "Plots")
+        
         
         # Add raw data section with title
         raw_data_group = QGroupBox("Raw Serial Data")
@@ -213,6 +331,64 @@ class GroundStationGUI(QMainWindow):
         # Create map tab
         map_tab = QWidget()
         map_layout = QVBoxLayout(map_tab)
+        
+        # Add map controls
+        map_controls = QHBoxLayout()
+        
+        # Create left side controls for GPS info
+        left_controls = QHBoxLayout()  # Changed to QHBoxLayout
+        
+        # Add GPS coordinates label first
+        self.gps_label = QLabel("GPS: No Fix")
+        self.gps_label.setStyleSheet("""
+            QLabel {
+                background-color: #2a2a2a;
+                color: #ff6b6b;
+                padding: 8px 12px;
+                border: 1px solid #3a3a3a;
+                border-radius: 6px;
+                font-family: 'Courier New';
+                font-size: 12px;
+                font-weight: bold;
+                min-width: 300px;
+            }
+        """)
+        left_controls.addWidget(self.gps_label)
+        
+        # Add small spacing between coordinates and button
+        left_controls.addSpacing(10)
+        
+        # Add Google Maps button on the right of coordinates
+        self.google_maps_btn = QPushButton("Open in Maps")
+        self.google_maps_btn.setEnabled(False)
+        self.google_maps_btn.clicked.connect(self.open_google_maps)
+        self.google_maps_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #2a2a2a;
+                color: #ffffff;
+                padding: 5px 10px;
+                border: 1px solid #3a3a3a;
+                border-radius: 4px;
+                min-width: 100px;
+            }
+            QPushButton:disabled {
+                background-color: #1a1a1a;
+                color: #666666;
+            }
+        """)
+        left_controls.addWidget(self.google_maps_btn)
+        
+        map_controls.addLayout(left_controls)
+        map_controls.addStretch()
+        
+        # Add existing controls on the right
+        self.follow_marker = QCheckBox("Lock on GPS")
+        self.follow_marker.setChecked(True)
+        self.follow_marker.stateChanged.connect(self.toggle_map_follow)
+        map_controls.addWidget(self.follow_marker)
+        
+        map_controls.addStretch()
+        map_layout.addLayout(map_controls)
         
         # Create web view for map
         self.map_view = QWebEngineView()
@@ -337,23 +513,33 @@ class GroundStationGUI(QMainWindow):
         self.port_selector.addItems(ports)
 
     def toggle_connection(self):
+        """Toggle serial connection state."""
         if self.serial_port is None:
             try:
                 port = self.port_selector.currentText()
-                self.serial_port = serial.Serial(port, 115200)
+                self.serial_port = serial.Serial(port, 115200, timeout=1)
                 self.connect_button.setText("Disconnect")
                 self.port_selector.setEnabled(False)
-                # Start reading thread
-                self.reader_thread = threading.Thread(target=self.read_serial)
-                self.reader_thread.daemon = True
-                self.reader_thread.start()
+                
+                # Start serial reading thread
+                self.serial_thread = threading.Thread(target=self.read_serial, daemon=True)
+                self.serial_thread.start()
+                
+                # Log connection
+                self.update_status(f"Connected to {port}")
+                
             except Exception as e:
-                QMessageBox.critical(self, "Connection Error", str(e))
+                QMessageBox.critical(self, "Connection Error", f"Could not open port: {str(e)}")
+                self.serial_port = None
         else:
-            self.serial_port.close()
+            try:
+                self.serial_port.close()
+            except:
+                pass
             self.serial_port = None
             self.connect_button.setText("Connect")
             self.port_selector.setEnabled(True)
+            self.update_status("Disconnected")
 
     def read_serial(self):
         while self.serial_port and self.serial_port.is_open:
@@ -383,157 +569,42 @@ class GroundStationGUI(QMainWindow):
                 if self.is_logging and self.log_file:
                     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
                     self.log_file.write(f"[{timestamp}] {line}\n")
-                    self.log_file.flush()  # Ensure data is written immediately
+                    self.log_file.flush()
                 
-                # Validate and clean the data
-                line = ''.join(c for c in line if c.isprintable() or c in [',', '.', '-'])
+                # Add to raw data display
+                timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+                self.data_display.append(f"[{timestamp}] {line}")
                 
-                # Split into main packet and RSSI/SNR update if present
-                parts = line.strip().split('\n')
+                # Split line into values
+                values = line.strip().split(',')
                 
-                # Parse main packet
-                values = parts[0].split(',')
-                # Remove any empty/null elements at the end of values
-                while values and (not values[-1] or not values[-1].strip()):
-                    values.pop()
-                    
-                # Validate all values are present and non-empty
-                if any(not v.strip() for v in values):
-                    continue
-
-                # Handle RSSI/SNR only updates (2 values)
-                if len(values) == 2:
+                # Parse RSSI/SNR/Delta update (3 values)
+                if len(values) == 3:
                     try:
-                        # Validate these are numbers
-                        if not all(v.strip('-').replace('.','').isdigit() for v in values):
-                            continue
-                        rssi = int(values[0])
-                        snr = int(values[1])
-                        self.update_parameter('RSSI', rssi)
-                        self.update_parameter('SNR', snr)
+                        rssi = float(values[0])
+                        snr = float(values[1])
+                        delta = float(values[2])
+                        
+                        # Update status widgets
+                        self.update_parameter('rssi', rssi)
+                        self.update_parameter('snr', snr)
+                        
                     except ValueError:
-                        continue
-                    
-                    # Add to raw data display
-                    timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-                    self.data_display.append(f"[{timestamp}] RSSI/SNR Update: {line}")
-                    continue
-
-                # Handle full telemetry packets (17 values)
-                if len(values) == 17:
-                    # Parse values directly without JSON
-                    ack = int(values[0])
-                    rssi = int(values[1])
-                    snr = int(values[2])
-                    roll = float(values[3])
-                    pitch = float(values[4])
-                    yaw = float(values[5])
-                    pressure = float(values[6])
-                    temperature = float(values[7])
-                    altitude = float(values[8])
-                    sd_status = bool(int(values[9]))
-                    actuator_status = bool(int(values[10]))
-                    gps_lat = float(values[11])
-                    gps_lon = float(values[12])
-                    gps_alt = float(values[13])
-                    gps_speed = float(values[14])
-                    gps_time = float(values[15])
-                    gps_valid = bool(int(values[16]))
-                    
-                    # Update RSSI/SNR if new values received
-                    if len(parts) > 1:
-                        rssi_snr = parts[1].split(',')
-                        if len(rssi_snr) == 2:
-                            rssi = int(rssi_snr[0])
-                            snr = int(rssi_snr[1])
-                    
-                    # Update data arrays
-                    timestamp = len(self.time_data)
-                    self.time_data.append(timestamp)
-                    self.altitude_data.append(altitude)
-                    self.temperature_data.append(temperature)
-                    self.pressure_data.append(pressure)
-                    
-                    # Update plots
-                    self.altitude_line.setData(self.time_data, self.altitude_data)
-                    self.temp_line.setData(self.time_data, self.temperature_data)
-                    self.pressure_line.setData(self.time_data, self.pressure_data)
-                    
-                    # Update dashboard values
-                    self.update_parameter('Altitude', altitude)
-                    self.update_parameter('Temperature', temperature)
-                    self.update_parameter('Pressure', pressure)
-                    self.update_parameter('Roll', roll)
-                    self.update_parameter('Pitch', pitch)
-                    self.update_parameter('Yaw', yaw)
-                    self.update_parameter('RSSI', rssi)
-                    self.update_parameter('SNR', snr)
-                    self.update_parameter('ACK', ack)
-                    
-                    # Update status indicators
-                    status_color = "#00ff00" if sd_status else "#ff0000"
-                    self.status_widgets['sdstatus'].setStyleSheet(f"color: {status_color}")
-                    
-                    status_color = "#00ff00" if actuator_status else "#ff0000"
-                    self.status_widgets['actuatorstatus'].setStyleSheet(f"color: {status_color}")
-                    
-                    # Update GPS data if valid
-                    if gps_valid:
-                        self.update_map_marker(gps_lat, gps_lon)
-                        self.update_parameter('GPS Speed', gps_speed, "{:.1f}")
-                        self.status_widgets['gps'].setStyleSheet("color: #00ff00")
-                    else:
-                        self.status_widgets['gps'].setStyleSheet("color: #ff0000")
-                    
-                    # Update raw data display with timestamp and both packet parts
-                    timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-                    if len(parts) > 1:
-                        self.data_display.append(f"[{timestamp}] Main: {parts[0]}")
-                        self.data_display.append(f"[{timestamp}] RSSI/SNR: {parts[1]}")
-                    else:
-                        self.data_display.append(f"[{timestamp}] {line}")
-                    
-                    # Keep only the last 100 lines
-                    doc = self.data_display.document()
-                    while doc.blockCount() > 100:
-                        cursor = QTextCursor(doc.firstBlock())
-                        cursor.select(QTextCursor.BlockUnderCursor)
-                        cursor.removeSelectedText()
-                        cursor.deleteChar()
-                    
-                # Handle extended packets (18 values - includes battery voltage)
+                        print(f"Error parsing RSSI/SNR/Delta values: {line}")
+                        
+                # Process main telemetry packet (18 values)
                 elif len(values) == 18:
-                    # Parse values directly without JSON
-                    ack = int(values[0])
-                    rssi = int(values[1])
-                    snr = int(values[2]) 
-                    roll = float(values[3])
-                    pitch = float(values[4])
-                    yaw = float(values[5])
-                    pressure = float(values[6])
-                    temperature = float(values[7])
-                    altitude = float(values[8])
-                    sd_status = bool(int(values[9]))
-                    actuator_status = bool(int(values[10]))
-                    gps_lat = float(values[11])
-                    gps_lon = float(values[12]) 
-                    gps_alt = float(values[13])
-                    gps_speed = float(values[14])
-                    gps_time = float(values[15])
-                    gps_valid = bool(int(values[16]))
-                    battery_voltage = float(values[17])
-
-                    # Update all parameters...
-                    # Existing update code...
-                    
-                    # Add battery voltage display
-                    self.update_parameter('Battery', battery_voltage, "{:.2f}")
-
-                else:
-                    print(f"Invalid packet length: {len(values)}")
-                    
-            except ValueError as e:
-                print(f"Error parsing values: {str(e)}")
+                    try:
+                        # Keep only the last 100 lines in raw data display
+                        doc = self.data_display.document()
+                        while doc.blockCount() > 100:
+                            cursor = QTextCursor(doc.firstBlock())
+                            cursor.select(QTextCursor.BlockUnderCursor)
+                            cursor.removeSelectedText()
+                            cursor.deleteChar()
+                    except Exception as e:
+                        print(f"Error processing telemetry packet: {str(e)}")
+                        
             except Exception as e:
                 print(f"Error processing data: {str(e)}")
 
@@ -552,12 +623,90 @@ class GroundStationGUI(QMainWindow):
                 else:
                     widget.setStyleSheet("font-size: 24px; color: #ff0000;")  # Poor signal
 
-    def update_map_marker(self, lat, lon):
-        if lat != 0 and lon != 0:  # Only update if we have valid coordinates
+    def calculate_bearing(self, lat1, lon1, lat2, lon2):
+        """Calculate bearing between two points using GPS coordinates."""
+        try:
+            # Convert to radians
+            lat1 = radians(float(lat1))
+            lon1 = radians(float(lon1))
+            lat2 = radians(float(lat2))
+            lon2 = radians(float(lon2))
+            
+            # Calculate bearing using Great Circle formula
+            d_lon = lon2 - lon1
+            x = sin(d_lon) * cos(lat2)
+            y = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(d_lon)
+            
+            initial_bearing = atan2(x, y)
+            
+            # Convert to degrees and normalize
+            initial_bearing = degrees(initial_bearing)
+            compass_bearing = (initial_bearing + 360) % 360
+            
+            return compass_bearing
+        except Exception as e:
+            print(f"Error calculating bearing: {str(e)}")
+            return 0.0
+
+    def update_map_marker(self, lat, lon, alt=0):
+        """Update map marker position and bearing calculation."""
+        if (lat != 0 and lon != 0):  # Only update if we have valid coordinates
+            # Calculate bearing if we have previous coordinates
+            if self.last_gps_lat is not None and self.last_gps_lon is not None:
+                # Only calculate new bearing if we've moved more than a minimal distance
+                min_distance = 0.0001  # About 10 meters
+                if abs(lat - self.last_gps_lat) > min_distance or abs(lon - self.last_gps_lon) > min_distance:
+                    bearing = self.calculate_bearing(self.last_gps_lat, self.last_gps_lon, lat, lon)
+                    self.compass.setBearing(bearing)
+                    self.bearing_value.setText(f"{bearing:.1f}°")
+            
+            # Store current coordinates for next calculation
+            self.last_gps_lat = lat
+            self.last_gps_lon = lon
+            
+            # Update map marker
             js_code = f"updateMarker({lat}, {lon});"
             self.map_view.page().runJavaScript(js_code)
+            
+            # Update GPS label
+            lat_direction = "N" if lat >= 0 else "S"
+            lon_direction = "E" if lon >= 0 else "W"
+            coord_text = (
+                f"Lat: {abs(lat):.6f}° {lat_direction}  •  "
+                f"Lon: {abs(lon):.6f}° {lon_direction}\n"
+                f"Altitude: {alt:.1f} m MSL"
+            )
+            self.gps_label.setText(coord_text)
+            self.gps_label.setStyleSheet("""
+                QLabel {
+                    background-color: #2a2a2a;
+                    color: #00ff00;
+                    padding: 8px 12px;
+                    border: 1px solid #3a3a3a;
+                    border-radius: 6px;
+                    font-family: 'Courier New';
+                    font-size: 12px;
+                    font-weight: bold;
+                }
+            """)
+            self.google_maps_btn.setEnabled(True)
+            
+        else:
+            self.gps_label.setText("GPS: Waiting for fix...")
+            self.gps_label.setStyleSheet("""
+                QLabel {
+                    background-color: #3a2a2a;
+                    color: #ff6b6b;
+                    padding: 8px 12px;
+                    border: 1px solid #4a3a3a;
+                    border-radius: 6px;
+                    font-family: 'Courier New';
+                    font-size: 12px;
+                    font-weight: bold;
+                }
+            """)
+            self.google_maps_btn.setEnabled(False)
 
-    # Add these methods to the GroundStationGUI class
     def send_command(self, command):
         """Send a generic command over serial."""
         if self.serial_port and self.serial_port.is_open:
@@ -594,13 +743,20 @@ class GroundStationGUI(QMainWindow):
         """Toggle serial data logging to file."""
         if not self.is_logging:
             try:
-                # Create filename with timestamp
-                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                # Create logs directory if it doesn't exist
                 path = "logs"
                 if not os.path.exists(path):
                     os.makedirs(path)
-                filename = f"{path}/serial_log_{timestamp}.txt"
+                
+                # Create filename with human-readable timestamp
+                timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+                filename = f"{path}/flight_log_{timestamp}.txt"
+                
                 self.log_file = open(filename, 'w')
+                self.log_file.write(f"HAB Ground Station Log\n")
+                self.log_file.write(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                self.log_file.write(f"----------------------------------------\n\n")
+                
                 self.is_logging = True
                 self.log_button.setText("Stop Logging")
                 self.data_display.append(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Started logging to {filename}")
@@ -608,11 +764,327 @@ class GroundStationGUI(QMainWindow):
                 QMessageBox.critical(self, "Logging Error", f"Could not create log file: {str(e)}")
         else:
             if self.log_file:
+                self.log_file.write(f"\n----------------------------------------\n")
+                self.log_file.write(f"Ended: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
                 self.log_file.close()
                 self.log_file = None
             self.is_logging = False
             self.log_button.setText("Start Logging")
             self.data_display.append(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Stopped logging")
+
+    def update_sim_gps(self):
+        """Simulate GPS movement in a random path."""
+        if not self.gps_simulation:
+            return
+            
+        # Store previous position for bearing calculation
+        prev_lat = self.sim_lat
+        prev_lon = self.sim_lon
+        
+        # Randomly adjust direction (-30 to +30 degrees)
+        self.sim_angle += random.uniform(-30, 30)
+        
+        # Calculate new position based on angle
+        lat_change = cos(radians(self.sim_angle)) * 0.001
+        lon_change = sin(radians(self.sim_angle)) * 0.001
+        
+        self.sim_lat += lat_change
+        self.sim_lon += lon_change
+        
+        # Calculate actual bearing from position change
+        if prev_lat != self.sim_lat or prev_lon != self.sim_lon:  # Only update if position changed
+            bearing = self.calculate_bearing(prev_lat, prev_lon, self.sim_lat, self.sim_lon)
+            # Update compass widget and bearing display
+            self.compass.setBearing(bearing)
+            self.bearing_value.setText(f"{bearing:.1f}°")
+        
+        # Simulate ground speed (5-15 m/s)
+        ground_speed = random.uniform(5, 15)
+        
+        # Simulate altitude changes
+        if not hasattr(self, 'sim_alt'):
+            self.sim_alt = 100  # Initial altitude
+            self.sim_vertical_speed = random.uniform(-2, 2)  # Initial vertical speed
+        
+        # Update vertical speed with small random changes
+        self.sim_vertical_speed += random.uniform(-0.5, 0.5)
+        # Clamp vertical speed between -5 and 5 m/s
+        self.sim_vertical_speed = max(-5, min(5, self.sim_vertical_speed))
+        
+        # Update altitude based on vertical speed
+        self.sim_alt += self.sim_vertical_speed
+        # Keep altitude between 50 and 500 meters
+        if self.sim_alt < 50 or self.sim_alt > 500:
+            self.sim_vertical_speed *= -0.5  # Reverse direction when hitting limits
+        
+        # Update map marker with simulated values
+        self.update_map_marker(self.sim_lat, self.sim_lon, self.sim_alt)
+        
+        # Update speed dials
+        self.ground_speed_dial.setValue(ground_speed)
+        self.vertical_speed_dial.setValue(self.sim_vertical_speed)
+        
+        # Add to data display
+        timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+        self.data_display.append(
+            f"[{timestamp}] Sim GPS: {self.sim_lat:.6f}, {self.sim_lon:.6f}, "
+            f"Alt: {self.sim_alt:.1f}m, GS: {ground_speed:.1f}m/s, VS: {self.sim_vertical_speed:.1f}m/s"
+        )
+        
+        # Log if enabled
+        if self.is_logging and self.log_file:
+            self.log_file.write(
+                f"[{timestamp}] Simulated GPS: {self.sim_lat:.6f}, {self.sim_lon:.6f}, "
+                f"Alt: {self.sim_alt:.1f}m, GS: {ground_speed:.1f}m/s, VS: {self.sim_vertical_speed:.1f}m/s\n"
+            )
+            self.log_file.flush()
+
+        # Simulate GPS time (seconds since midnight)
+        current_time = datetime.now().time()
+        gps_time = current_time.hour * 3600 + current_time.minute * 60 + current_time.second
+        self.gps_clock.setTime(gps_time)
+
+    def toggle_map_follow(self, state):
+        """Toggle whether map follows the GPS marker."""
+        js_code = f"setFollowMarker({str(state == Qt.Checked).lower()});"
+        self.map_view.page().runJavaScript(js_code)
+
+    def clear_map_path(self):
+        """Clear the GPS path trace on the map."""
+        self.map_view.page().runJavaScript("clearPath();")
+        self.data_display.append(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] Cleared GPS path")
+
+    def open_google_maps(self):
+        """Open current coordinates in Google Maps."""
+        if hasattr(self, 'current_lat') and hasattr(self, 'current_lon'):
+            url = f"https://www.google.com/maps?q={self.current_lat},{self.current_lon}"
+            import webbrowser
+            webbrowser.open(url)
+
+    def clear_plots(self):
+        """Clear all plot data."""
+        # Clear data arrays
+        self.time_data = []
+        self.altitude_data = []
+        self.temperature_data = []
+        self.pressure_data = []
+        
+        # Update plots
+        self.altitude_line.setData([], [])
+        self.temp_line.setData([], [])
+        self.pressure_line.setData([], [])
+        
+        # Add log entry
+        timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
+        self.data_display.append(f"[{timestamp}] Cleared all plots")
+
+    def auto_connect(self):
+        """Automatically connect to the selected COM port."""
+        if self.serial_port is None:  # Only connect if not already connected
+            self.toggle_connection()
+            if self.serial_port and self.serial_port.is_open:
+                self.data_display.append(
+                    f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] "
+                    f"Auto-connected to {self.port_selector.currentText()}"
+                )
+
+# Add this new widget class
+class CompassWidget(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.bearing = 0
+        self.setMinimumSize(150, 150)
+        
+    def setBearing(self, bearing):
+        self.bearing = bearing
+        self.update()
+        
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        try:
+            painter.setRenderHint(QPainter.Antialiasing)
+            
+            # Calculate center and radius
+            center_x = self.width() // 2
+            center_y = self.height() // 2
+            radius = min(center_x, center_y) - 10
+            
+            # Draw outer circle
+            painter.setPen(QPen(QColor('#3a3a3a'), 2))
+            painter.setBrush(QBrush(QColor('#2a2a2a')))
+            painter.drawEllipse(QRectF(center_x - radius, center_y - radius, radius * 2, radius * 2))
+            
+            # Draw cardinal points
+            painter.setPen(QPen(QColor('#666666'), 1))
+            font = QFont('Arial', 10)
+            font.setBold(True)
+            painter.setFont(font)
+            
+            points = [('N', 0), ('E', 90), ('S', 180), ('W', 270)]
+            for label, angle in points:
+                x = int(center_x + (radius - 20) * sin(radians(angle)))
+                y = int(center_y - (radius - 20) * cos(radians(angle)))
+                # Create a QRect for text placement
+                text_rect = QRectF(x - 10, y - 10, 20, 20)
+                painter.drawText(text_rect, Qt.AlignCenter, label)
+            
+            # Draw direction arrow instead of simple line
+            painter.setPen(QPen(QColor('#00ff00'), 2))
+            painter.setBrush(QBrush(QColor('#00ff00')))
+            
+            # Calculate arrow points
+            needle_length = radius - 15
+            arrow_width = 10
+            
+            # Arrow tip
+            tip_x = center_x + needle_length * sin(radians(self.bearing))
+            tip_y = center_y - needle_length * cos(radians(self.bearing))
+            
+            # Arrow base points
+            base1_x = center_x + arrow_width * sin(radians(self.bearing + 90))
+            base1_y = center_y - arrow_width * cos(radians(self.bearing + 90))
+            base2_x = center_x + arrow_width * sin(radians(self.bearing - 90))
+            base2_y = center_y - arrow_width * cos(radians(self.bearing - 90))
+            
+            # Draw arrow
+            points = [
+                QPoint(int(tip_x), int(tip_y)),
+                QPoint(int(base1_x), int(base1_y)),
+                QPoint(int(base2_x), int(base2_y))
+            ]
+            painter.drawPolygon(points)
+            
+            # Draw bearing value
+            painter.setPen(QPen(QColor('#00ff00'), 1))
+            font = QFont('Arial', 12)
+            font.setBold(True)
+            painter.setFont(font)
+            painter.drawText(QRectF(0, center_y + radius/2, self.width(), 30),
+                            Qt.AlignHCenter,
+                            f"{self.bearing:.1f}°")
+        finally:
+            painter.end()
+
+# Add this new widget class after the CompassWidget class
+class SpeedDialWidget(QWidget):
+    def __init__(self, title, unit, max_value=100, parent=None):
+        super().__init__(parent)
+        self.title = title
+        self.unit = unit
+        self.value = 0
+        self.max_value = max_value
+        self.setMinimumSize(100, 100)
+        
+    def setValue(self, value):
+        self.value = min(value, self.max_value)  # Clamp to max value
+        self.update()
+        
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        try:
+            painter.setRenderHint(QPainter.Antialiasing)
+            
+            # Calculate center and radius
+            center_x = self.width() // 2
+            center_y = self.height() // 2
+            radius = min(center_x, center_y) - 10
+            
+            # Draw outer circle
+            painter.setPen(QPen(QColor('#3a3a3a'), 2))
+            painter.setBrush(QBrush(QColor('#2a2a2a')))
+            painter.drawEllipse(QRectF(center_x - radius, center_y - radius, 
+                                     radius * 2, radius * 2))
+            
+            # Draw title
+            painter.setPen(QPen(QColor('#00ff00'), 1))
+            font = QFont('Arial', 9)
+            font.setBold(True)
+            painter.setFont(font)
+            painter.drawText(QRectF(0, 5, self.width(), 20),
+                           Qt.AlignHCenter, self.title)
+            
+            # Draw scale markers
+            painter.setPen(QPen(QColor('#666666'), 1))
+            for i in range(11):  # 0 to max_value in 10 steps
+                angle = -120 + (i * 240 / 10)  # -120° to +120°
+                inner_x = center_x + (radius - 15) * cos(radians(angle))
+                inner_y = center_y + (radius - 15) * sin(radians(angle))
+                outer_x = center_x + (radius - 5) * cos(radians(angle))
+                outer_y = center_y + (radius - 5) * sin(radians(angle))
+                painter.drawLine(int(inner_x), int(inner_y), 
+                               int(outer_x), int(outer_y))
+            
+            # Draw value needle
+            painter.setPen(QPen(QColor('#ff0000'), 2))
+            value_angle = -120 + (self.value * 240 / self.max_value)
+            needle_length = radius - 10
+            end_x = center_x + needle_length * cos(radians(value_angle))
+            end_y = center_y + needle_length * sin(radians(value_angle))
+            painter.drawLine(center_x, center_y, int(end_x), int(end_y))
+            
+            # Draw center dot
+            painter.setBrush(QBrush(QColor('#ff0000')))
+            painter.drawEllipse(QPoint(center_x, center_y), 5, 5)
+            
+            # Draw value text
+            painter.setPen(QPen(QColor('#ffffff'), 1))
+            font = QFont('Arial', 11)
+            font.setBold(True)
+            painter.setFont(font)
+            painter.drawText(QRectF(0, center_y + 10, self.width(), 25),
+                           Qt.AlignHCenter,
+                           f"{self.value:.1f} {self.unit}")
+        finally:
+            painter.end()
+
+# Add this new widget class after the SpeedDialWidget class
+class DigitalClockWidget(QWidget):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.hours = 0
+        self.minutes = 0
+        self.seconds = 0
+        self.setMinimumSize(200, 80)
+        
+    def setTime(self, gps_time):
+        """Update time from GPS time (seconds since midnight)"""
+        total_seconds = int(gps_time)
+        self.hours = total_seconds // 3600
+        self.minutes = (total_seconds % 3600) // 60
+        self.seconds = total_seconds % 60
+        self.update()
+        
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        try:
+            painter.setRenderHint(QPainter.Antialiasing)
+            
+            # Draw background
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QBrush(QColor('#1a1a1a')))
+            painter.drawRoundedRect(0, 0, self.width(), self.height(), 10, 10)
+            
+            # Draw time text
+            time_str = f"{self.hours:02d}:{self.minutes:02d}:{self.seconds:02d}"
+            painter.setPen(QPen(QColor('#00ff00')))
+            font = QFont('Courier New', 24)
+            font.setBold(True)
+            painter.setFont(font)
+            
+            # Draw label
+            label_font = QFont('Arial', 10)
+            label_font.setBold(True)
+            painter.setFont(label_font)
+            painter.drawText(QRectF(0, 5, self.width(), 20),
+                           Qt.AlignHCenter, "GPS Time (UTC)")
+            
+            # Draw time
+            painter.setFont(font)
+            painter.drawText(QRectF(0, 20, self.width(), self.height()-20),
+                           Qt.AlignCenter, time_str)
+            
+        finally:
+            painter.end()
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
@@ -630,7 +1102,7 @@ if __name__ == '__main__':
     palette.setColor(QPalette.Button, Qt.darkGray)
     palette.setColor(QPalette.ButtonText, Qt.white)
     app.setPalette(palette)
-    
+
     window = GroundStationGUI()
     window.show()
     sys.exit(app.exec_())
