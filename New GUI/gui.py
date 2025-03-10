@@ -83,6 +83,9 @@ class GroundStationGUI(QMainWindow):
         self.serial_queue = queue.Queue()
         self.serial_port = None
         
+        # Initialize status widgets dictionary
+        self.status_widgets = {}  # Add this line
+        
         # Setup UI
         self.setup_ui()
         
@@ -158,51 +161,152 @@ class GroundStationGUI(QMainWindow):
         self.tab_widget = QTabWidget()
         left_layout.addWidget(self.tab_widget)
         
-        # Create plots tab
+        # Plots tab
         plots_tab = QWidget()
-        plots_layout = QGridLayout(plots_tab)
+        plots_layout = QVBoxLayout(plots_tab)
         
-        # Add existing plots to the plots tab
-        self.altitude_plot = pg.PlotWidget(title="Altitude")
-        self.altitude_plot.setLabel('left', "Altitude", units='m')
-        self.altitude_plot.setLabel('bottom', "Time", units='s')
-        self.altitude_line = self.altitude_plot.plot(pen='b')
-        plots_layout.addWidget(self.altitude_plot, 0, 0)
-        
-        self.temp_plot = pg.PlotWidget(title="Temperature")
-        self.temp_plot.setLabel('left', "Temperature", units='°C')
-        self.temp_plot.setLabel('bottom', "Time", units='s')
-        self.temp_line = self.temp_plot.plot(pen='r')
-        plots_layout.addWidget(self.temp_plot, 0, 1)
-        
-        self.pressure_plot = pg.PlotWidget(title="Pressure")
-        self.pressure_plot.setLabel('left', "Pressure", units='hPa')
-        self.pressure_plot.setLabel('bottom', "Time", units='s')
-        self.pressure_line = self.pressure_plot.plot(pen='g')
-        plots_layout.addWidget(self.pressure_plot, 1, 0)
-        
-        # Add control buttons for plots
-        plot_controls = QHBoxLayout()
-        
-        # Add clear button
-        clear_plots_button = QPushButton("Clear Plots")
-        clear_plots_button.clicked.connect(self.clear_plots)
-        clear_plots_button.setStyleSheet("""
-            QPushButton {
+        # Add plot selector
+        plot_selector = QComboBox()
+        plot_selector.addItems([
+            "Flight Data",
+            "Signal Strength",
+            "All Plots"
+        ])
+        plot_selector.setStyleSheet("""
+            QComboBox {
                 background-color: #2a2a2a;
                 color: #ffffff;
-                padding: 5px 10px;
+                padding: 5px;
                 border: 1px solid #3a3a3a;
                 border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #3a3a3a;
+                min-width: 150px;
             }
         """)
-        plot_controls.addWidget(clear_plots_button)
+        plot_selector.currentIndexChanged.connect(self.switch_plot_view)
+        plots_layout.addWidget(plot_selector)
         
-        plot_controls.addStretch()  # Add stretch to keep button left-aligned
-        plots_layout.addLayout(plot_controls, 2, 0, 1, 2)  # Span both columns
+        # Create stacked widget for different plot pages
+        self.plot_stack = QStackedWidget()
+        plots_layout.addWidget(self.plot_stack)
+        
+        # Flight Data page (GPS altitude, speeds, temp/pressure)
+        flight_page = QWidget()
+        flight_layout = QGridLayout(flight_page)
+        
+        # Altitude plot (top left)
+        self.altitude_plot = pg.PlotWidget(title="GPS Altitude")
+        self.altitude_plot.setLabel('left', 'Altitude', units='m')
+        self.altitude_plot.setLabel('bottom', 'Time', units='s')
+        self.altitude_plot.showGrid(x=True, y=True)
+        flight_layout.addWidget(self.altitude_plot, 0, 0)
+        
+        # Speed plot (top right)
+        self.speed_plot = pg.PlotWidget(title="Speed")
+        self.speed_plot.setLabel('left', 'Speed', units='m/s')
+        self.speed_plot.setLabel('bottom', 'Time', units='s')
+        self.speed_plot.showGrid(x=True, y=True)
+        self.speed_plot.addLegend()
+        flight_layout.addWidget(self.speed_plot, 0, 1)
+        
+        # Temperature & Pressure plot (bottom)
+        self.temp_press_plot = pg.PlotWidget(title="Temperature & Pressure")
+        self.temp_press_plot.setLabel('left', 'Temperature', units='°C')
+        self.temp_press_plot.setLabel('right', 'Pressure', units='hPa')
+        self.temp_press_plot.setLabel('bottom', 'Time', units='s')
+        self.temp_press_plot.showGrid(x=True, y=True)
+        self.temp_press_plot.addLegend()
+        flight_layout.addWidget(self.temp_press_plot, 1, 0, 1, 2)  # Span two columns
+        
+        # Signal Strength page
+        signal_page = QWidget()
+        signal_layout = QVBoxLayout(signal_page)
+        
+        self.signal_plot = pg.PlotWidget(title="Signal Strength")
+        self.signal_plot.setLabel('left', 'Level')
+        self.signal_plot.setLabel('bottom', 'Time', units='s')
+        self.signal_plot.showGrid(x=True, y=True)
+        self.signal_plot.addLegend()
+        signal_layout.addWidget(self.signal_plot)
+        
+        # Signal Strength page
+        signal_page = QWidget()
+        signal_layout = QGridLayout(signal_page)
+        
+        self.signal_plot = pg.PlotWidget(title="Signal Strength")
+        self.signal_plot.setLabel('left', 'Level')
+        self.signal_plot.setLabel('bottom', 'Time', units='s')
+        self.signal_plot.showGrid(x=True, y=True)
+        self.signal_plot.addLegend()
+        signal_layout.addWidget(self.signal_plot, 0, 0)
+        
+        self.temp_press_plot = pg.PlotWidget(title="Temperature & Pressure")
+        self.temp_press_plot.setLabel('left', 'Temperature', units='°C')
+        self.temp_press_plot.setLabel('right', 'Pressure', units='hPa')
+        self.temp_press_plot.setLabel('bottom', 'Time', units='s')
+        self.temp_press_plot.showGrid(x=True, y=True)
+        self.temp_press_plot.addLegend()
+        signal_layout.addWidget(self.temp_press_plot, 0, 1)
+        
+        # All Plots page
+        all_plots_page = QWidget()
+        all_layout = QGridLayout(all_plots_page)
+        
+        # Create new plot widgets for the all plots view
+        altitude_plot_all = pg.PlotWidget(title="GPS Altitude")
+        altitude_plot_all.setLabel('left', 'Altitude', units='m')
+        altitude_plot_all.setLabel('bottom', 'Time', units='s')
+        altitude_plot_all.showGrid(x=True, y=True)
+        
+        speed_plot_all = pg.PlotWidget(title="Speed")
+        speed_plot_all.setLabel('left', 'Speed', units='m/s')
+        speed_plot_all.setLabel('bottom', 'Time', units='s')
+        speed_plot_all.showGrid(x=True, y=True)
+        speed_plot_all.addLegend()
+        
+        signal_plot_all = pg.PlotWidget(title="Signal Strength")
+        signal_plot_all.setLabel('left', 'Level')
+        signal_plot_all.setLabel('bottom', 'Time', units='s')
+        signal_plot_all.showGrid(x=True, y=True)
+        signal_plot_all.addLegend()
+        
+        temp_press_plot_all = pg.PlotWidget(title="Temperature & Pressure")
+        temp_press_plot_all.setLabel('left', 'Temperature', units='°C')
+        temp_press_plot_all.setLabel('right', 'Pressure', units='hPa')
+        temp_press_plot_all.setLabel('bottom', 'Time', units='s')
+        temp_press_plot_all.showGrid(x=True, y=True)
+        temp_press_plot_all.addLegend()
+        
+        # Add plots to layout
+        all_layout.addWidget(altitude_plot_all, 0, 0)
+        all_layout.addWidget(speed_plot_all, 0, 1)
+        all_layout.addWidget(signal_plot_all, 1, 0)
+        all_layout.addWidget(temp_press_plot_all, 1, 1)
+        
+        # Create curves for the all plots view
+        self.altitude_curve_all = altitude_plot_all.plot(pen='g')
+        self.speed_h_curve_all = speed_plot_all.plot(pen='y', name='Ground Speed')
+        self.speed_v_curve_all = speed_plot_all.plot(pen='c', name='Vertical Speed')
+        self.rssi_curve_all = signal_plot_all.plot(pen='r', name='RSSI')
+        self.snr_curve_all = signal_plot_all.plot(pen='b', name='SNR')
+        self.temp_curve_all = temp_press_plot_all.plot(pen='r', name='Temperature')
+        self.press_curve_all = temp_press_plot_all.plot(pen='b', name='Pressure')
+        
+        # Add pages to stack
+        self.plot_stack.addWidget(flight_page)
+        self.plot_stack.addWidget(signal_page)
+        self.plot_stack.addWidget(all_plots_page)
+        
+        # Initialize plot data
+        self.speed_h_curve = self.speed_plot.plot(pen='y', name='Ground Speed')
+        self.speed_v_curve = self.speed_plot.plot(pen='c', name='Vertical Speed')
+        self.altitude_curve = self.altitude_plot.plot(pen='g')
+        self.rssi_curve = self.signal_plot.plot(pen='r', name='RSSI')
+        self.snr_curve = self.signal_plot.plot(pen='b', name='SNR')
+        self.temp_curve = self.temp_press_plot.plot(pen='r', name='Temperature')
+        self.press_curve = self.temp_press_plot.plot(pen='b', name='Pressure')
+        
+        plots_tab.setLayout(plots_layout)
+        self.tab_widget.addTab(plots_tab, "Plots")
         
         # Create dashboard tab
         dashboard_tab = QWidget()
@@ -224,11 +328,47 @@ class GroundStationGUI(QMainWindow):
         
         # Add speed dials
         speed_dials_layout = QHBoxLayout()
+        speed_dials_layout.setSpacing(20)  # Add more spacing between dials
+        
+        # Create larger speed dials with increased minimum size
         self.ground_speed_dial = SpeedDialWidget("Ground Speed", "m/s", max_value=50)
+        self.ground_speed_dial.setMinimumSize(150, 150)  # Increased from 100x100
         self.vertical_speed_dial = SpeedDialWidget("Vertical Speed", "m/s", max_value=20)
-        speed_dials_layout.addWidget(self.ground_speed_dial)
-        speed_dials_layout.addWidget(self.vertical_speed_dial)
+        self.vertical_speed_dial.setMinimumSize(150, 150)  # Increased from 100x100
+        
+        # Add dials to layout with stretch factors
+        speed_dials_layout.addWidget(self.ground_speed_dial, stretch=1)
+        speed_dials_layout.addWidget(self.vertical_speed_dial, stretch=1)
+        
         nav_layout.addLayout(speed_dials_layout, 3, 0, 1, 2)
+        
+        # Add bearing display
+        bearing_label = QLabel("Bearing")
+        bearing_label.setStyleSheet("""
+            QLabel {
+                color: #00ff00;
+                font-weight: bold;
+                font-size: 14px;
+            }
+        """)
+        bearing_label.setAlignment(Qt.AlignCenter)
+        nav_layout.addWidget(bearing_label, 4, 0, 1, 2)
+        
+        # Initialize bearing value display
+        self.bearing_value = QLabel("--°")
+        self.bearing_value.setStyleSheet("""
+            QLabel {
+                font-size: 24px;
+                font-weight: bold;
+                color: #ffffff;
+                background-color: #2a2a2a;
+                border: 1px solid #3a3a3a;
+                border-radius: 8px;
+                padding: 8px;
+            }
+        """)
+        self.bearing_value.setAlignment(Qt.AlignCenter)
+        nav_layout.addWidget(self.bearing_value, 5, 0, 1, 2)
         
         nav_group.setLayout(nav_layout)
         dashboard_layout.addWidget(nav_group, 0, 0)  # Move to top left
@@ -289,7 +429,6 @@ class GroundStationGUI(QMainWindow):
         
         # Add tabs to tab widget
         self.tab_widget.addTab(dashboard_tab, "Dashboard")
-        self.tab_widget.addTab(plots_tab, "Plots")
         
         
         # Add raw data section with title
@@ -602,6 +741,45 @@ class GroundStationGUI(QMainWindow):
                             cursor.select(QTextCursor.BlockUnderCursor)
                             cursor.removeSelectedText()
                             cursor.deleteChar()
+                    
+                        # Calculate vertical speed
+                        vertical_speed = 0
+                        if len(self.altitude_data) >= 2:
+                            time_diff = self.time_data[-1] - self.time_data[-2]
+                            if time_diff > 0:
+                                vertical_speed = (self.altitude_data[-1] - self.altitude_data[-2]) / time_diff
+                        
+                        # Store new data points
+                        current_time = (time.time() - self.start_time) if hasattr(self, 'start_time') else 0
+                        self.ground_speed_data.append(gps_speed)
+                        self.vertical_speed_data.append(vertical_speed)
+                        self.gps_altitude_data.append(gps_alt)
+                        self.rssi_data.append(rssi)
+                        self.snr_data.append(snr)
+                        
+                        # Update plots in both views
+                        self.speed_h_curve.setData(self.time_data, self.ground_speed_data)
+                        self.speed_v_curve.setData(self.time_data, self.vertical_speed_data)
+                        self.altitude_curve.setData(self.time_data, self.gps_altitude_data)
+                        self.rssi_curve.setData(self.time_data, self.rssi_data)
+                        self.snr_curve.setData(self.time_data, self.snr_data)
+                        
+                        # Update all plots view
+                        self.speed_h_curve_all.setData(self.time_data, self.ground_speed_data)
+                        self.speed_v_curve_all.setData(self.time_data, self.vertical_speed_data)
+                        self.altitude_curve_all.setData(self.time_data, self.gps_altitude_data)
+                        self.rssi_curve_all.setData(self.time_data, self.rssi_data)
+                        self.snr_curve_all.setData(self.time_data, self.snr_data)
+                        
+                        # Trim data arrays if they get too long
+                        max_points = 100
+                        if len(self.time_data) > max_points:
+                            self.time_data = self.time_data[-max_points:]
+                            self.ground_speed_data = self.ground_speed_data[-max_points:]
+                            self.vertical_speed_data = self.vertical_speed_data[-max_points:]
+                            self.gps_altitude_data = self.gps_altitude_data[-max_points:]
+                            self.rssi_data = self.rssi_data[-max_points:]
+                            self.snr_data = self.snr_data[-max_points:]
                     except Exception as e:
                         print(f"Error processing telemetry packet: {str(e)}")
                         
@@ -888,6 +1066,10 @@ class GroundStationGUI(QMainWindow):
                     f"Auto-connected to {self.port_selector.currentText()}"
                 )
 
+    def switch_plot_view(self, index):
+        """Switch between different plot views."""
+        self.plot_stack.setCurrentIndex(index)
+
 # Add this new widget class
 class CompassWidget(QWidget):
     def __init__(self, parent=None):
@@ -997,10 +1179,10 @@ class SpeedDialWidget(QWidget):
             
             # Draw title
             painter.setPen(QPen(QColor('#00ff00'), 1))
-            font = QFont('Arial', 9)
+            font = QFont('Arial', 12)  # Increased from 9
             font.setBold(True)
             painter.setFont(font)
-            painter.drawText(QRectF(0, 5, self.width(), 20),
+            painter.drawText(QRectF(0, 8, self.width(), 25),  # Adjusted spacing
                            Qt.AlignHCenter, self.title)
             
             # Draw scale markers
@@ -1028,10 +1210,10 @@ class SpeedDialWidget(QWidget):
             
             # Draw value text
             painter.setPen(QPen(QColor('#ffffff'), 1))
-            font = QFont('Arial', 11)
+            font = QFont('Arial', 14)  # Increased from 11
             font.setBold(True)
             painter.setFont(font)
-            painter.drawText(QRectF(0, center_y + 10, self.width(), 25),
+            painter.drawText(QRectF(0, center_y + 15, self.width(), 30),  # Adjusted spacing
                            Qt.AlignHCenter,
                            f"{self.value:.1f} {self.unit}")
         finally:
