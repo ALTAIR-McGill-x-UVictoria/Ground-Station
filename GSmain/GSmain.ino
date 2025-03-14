@@ -329,13 +329,12 @@ String commandParser(){
           Serial.println("LED off");
           
         }
-        else if(strcmp(messageFromPC,"dangle") == 0){
+        else if(strcmp(messageFromPC,"imucal") == 0){
           // code = 4;
-          floatFromPC = abs(fmodf(floatFromPC, 360.0f));
-          dat = "6," + (String) floatFromPC;
+          dat = "6,000.00";
           queue.enqueue(dat);
           // Serial.print(dat); Serial.print(": ");
-          Serial.print("Set driver angle to: "); Serial.println(floatFromPC);
+          Serial.println("Zeroed IMU angles");
           
         }
         else if(strcmp(messageFromPC,"sdwrite") == 0){
