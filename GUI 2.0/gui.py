@@ -1,11 +1,11 @@
 import sys
 import serial
 from PyQt5.QtWidgets import *
-from PyQt5.QtCore import QTimer, Qt, QUrl, QPoint, QRectF  # Add QPoint here
+from PyQt5.QtCore import QTimer, Qt, QUrl, QPoint, QRectF
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 from PyQt5.QtGui import (
     QPalette, QColor, QTextCursor, QPainter, QBrush, 
-    QPen, QFont, QIcon  # Add QIcon here
+    QPen, QFont, QIcon
 )
 import pyqtgraph as pg
 from datetime import datetime
@@ -15,11 +15,9 @@ import os
 import random
 from math import sin, cos, radians, atan2, degrees
 
-# Add these imports at the top of the file
 from PyQt5.QtGui import QPainter, QColor, QBrush, QPen, QFont
 from PyQt5.QtCore import Qt, QRectF
 
-# Add new imports at the top of the file
 from geopy.geocoders import Nominatim
 import socket
 import requests

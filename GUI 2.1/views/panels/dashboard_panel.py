@@ -1,910 +1,309 @@
-from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QGroupBox,
-    QFrame, QLabel, QSizePolicy, QSpacerItem, QProgressBar
-)
-from PyQt5.QtCore import Qt, QTimer, QRectF, QPointF, QPoint
-from PyQt5.QtGui import QColor, QPalette, QFont, QBrush, QPainter, QPen, QPainterPath, QLinearGradient
+import time
+import math
+from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, 
+                           QLabel, QFrame, QSizePolicy, QSpacerItem, QGroupBox) # Removed QProgressBar, QRect, QPoint
+from PyQt5.QtCore import Qt, QTimer # Removed QSize, QRect, QPoint
+from PyQt5.QtGui import QFont, QColor # Removed QPalette, QPixmap, QPainter, QBrush, QPen, QRadialGradient
 
 from views.widgets.compass_widget import CompassWidget
 from views.widgets.dial_widget import SpeedDialWidget
-from views.widgets.clock_widget import DigitalClockWidget
+from views.widgets.clock_widget import DigitalClockWidget # Assuming this is equivalent to gui.py's DigitalClockWidget
 
-class StatusIndicator(QFrame):
-    """Small indicator widget that shows status with color"""
-    
-    def __init__(self, label="Status", parent=None):
-        super().__init__(parent)
-        self.setFrameShape(QFrame.StyledPanel)
-        self.setFrameShadow(QFrame.Sunken)
-        self.setMinimumWidth(100)
-        self.setMaximumHeight(30)
-        
-        self.layout = QHBoxLayout(self)
-        self.layout.setContentsMargins(5, 2, 5, 2)
-        
-        self.label = QLabel(label)
-        self.label.setFont(QFont("Arial", 8))
-        
-        self.indicator = QFrame()
-        self.indicator.setFixedSize(16, 16)
-        self.indicator.setFrameShape(QFrame.Box)
-        self.updateStatus(False)
-        
-        self.layout.addWidget(self.label)
-        self.layout.addWidget(self.indicator, alignment=Qt.AlignRight)
-    
-    def updateStatus(self, status):
-        """Update the indicator color based on status"""
-        if status:
-            self.indicator.setStyleSheet("background-color: #00ff00; border: 1px solid #00cc00;")
-        else:
-            self.indicator.setStyleSheet("background-color: #ff5500; border: 1px solid #cc4400;")
-
-
-class PercentBar(QWidget):
-    """Custom percentage bar with label"""
-    
-    def __init__(self, label="Progress", min_val=0, max_val=100, parent=None):
-        super().__init__(parent)
-        self.label = label
-        self.min_val = min_val
-        self.max_val = max_val
-        self.value = min_val
-        
-        self.layout = QVBoxLayout(self)
-        self.layout.setContentsMargins(0, 0, 0, 0)
-        self.layout.setSpacing(2)
-        
-        self.title = QLabel(label)
-        self.title.setFont(QFont("Arial", 8))
-        self.title.setAlignment(Qt.AlignLeft)
-        
-        self.progress = QProgressBar()
-        self.progress.setRange(min_val, max_val)
-        self.progress.setValue(min_val)
-        self.progress.setTextVisible(True)
-        self.progress.setFormat("%v / %m (%p%)")
-        self.progress.setStyleSheet("""
-            QProgressBar {
-                background-color: #222;
-                color: white;
-                border: 1px solid #444;
-                border-radius: 4px;
-                text-align: center;
-            }
-            QProgressBar::chunk {
-                background-color: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0a0, stop:1 #0f0);
-            }
-        """)
-        
-        self.layout.addWidget(self.title)
-        self.layout.addWidget(self.progress)
-    
-    def setValue(self, value):
-        """Set the current value"""
-        clamped_value = max(self.min_val, min(self.max_val, value))
-        self.value = clamped_value
-        self.progress.setValue(int(clamped_value))
-        self.update()
-
-
-class EventLogger(QFrame):
-    """Simple event logger widget that displays timestamped events"""
-    
-    def __init__(self, max_events=6, parent=None):
-        super().__init__(parent)
-        self.setFrameShape(QFrame.StyledPanel)
-        self.setFrameShadow(QFrame.Sunken)
-        self.setStyleSheet("background-color: #1a1a1a;")
-        
-        self.max_events = max_events
-        self.events = []
-        
-        self.layout = QVBoxLayout(self)
-        
-        # Title label
-        title = QLabel("Event Log")
-        title.setFont(QFont("Arial", 10, QFont.Bold))
-        title.setAlignment(Qt.AlignCenter)
-        self.layout.addWidget(title)
-        
-        # Event labels
-        self.event_labels = []
-        for i in range(max_events):
-            label = QLabel("")
-            label.setFont(QFont("Courier New", 8))
-            label.setWordWrap(True)
-            self.event_labels.append(label)
-            self.layout.addWidget(label)
-    
-    def addEvent(self, event_text):
-        """Add a new event to the log"""
-        import time
-        timestamp = time.strftime("%H:%M:%S")
-        self.events.insert(0, f"[{timestamp}] {event_text}")
-        
-        # Only keep max_events
-        self.events = self.events[:self.max_events]
-        
-        # Update display
-        for i, event in enumerate(self.events):
-            if i < len(self.event_labels):
-                self.event_labels[i].setText(event)
-        
-        # Clear any unused labels
-        for i in range(len(self.events), len(self.event_labels)):
-            self.event_labels[i].setText("")
-
+# Removed GaugeWidget, ModernIndicator, StatusCard, MissionClockWidget, EventLogger classes
 
 class DashboardPanel(QWidget):
-    """Panel for displaying the flight computer dashboard"""
+    """Dashboard panel based on gui.py structure"""
     
-    def __init__(self, telemetry_model, settings_model, parent=None):
+    def __init__(self, telemetry_model, connection_model, parent=None):
         super().__init__(parent)
         self.telemetry_model = telemetry_model
-        self.settings_model = settings_model
-        
-        # Initialize important values before setup_ui
-        self.mission_target_alt = 400
-        self.mission_elapsed = 0
-        
-        # Create event logger first before using it
-        self.event_logger = EventLogger(6)
-        
-        # Setup UI components
-        self.setup_ui()
+        self.connection_model = connection_model
+        # self.launch_time = None # Not used from gui.py in this way
+        self.start_time = time.time() # From gui.py for time calculations
+        self.status_widgets = {} # From gui.py
+
+        # Set styles from gui.py (simplified, can be expanded)
+        self.setStyleSheet("""
+            QGroupBox {
+                border: 2px solid #3a3a3a;
+                border-radius: 8px;
+                margin-top: 1ex; /* Ensure space for title */
+                font-weight: bold;
+                color: #00ff00; /* GroupBox title color */
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top center; /* Center title */
+                padding: 0 5px;
+            }
+            QLabel {
+                color: #ffffff; /* Default label color */
+            }
+        """)
         
         # Connect to model signals
-        self.telemetry_model.data_updated.connect(self.update_telemetry_display)
+        self.telemetry_model.data_updated.connect(self.update_indicators_from_model)
+        # self.connection_model.connection_changed.connect(self.update_connection_status) # MainWindow handles this
+
+        # Setup UI
+        self.setup_ui()
         
-        # Setup update timer for values that need constant updating
-        self.update_timer = QTimer(self)
-        self.update_timer.timeout.connect(self.update_dynamic_displays)
-        self.update_timer.start(100)  # Update every 100ms
-        
-        # Add test events to the log
-        self.event_logger.addEvent("System initialized")
-        self.event_logger.addEvent("Telemetry connection ready")
-        self.event_logger.addEvent("Waiting for flight computer")
-    
+        # Timer for dynamic updates (e.g., mission clock if re-added, or other periodic updates)
+        # self.timer = QTimer(self)
+        # self.timer.timeout.connect(self.update_dynamic_displays)
+        # self.timer.start(1000)
+
+        # Initialize last altitude and time for vertical speed calculation
+        self.last_altitude = None
+        self.last_altitude_time = None
+
     def setup_ui(self):
-        """Set up the dashboard panel UI"""
-        main_layout = QVBoxLayout(self)
+        """Set up the dashboard UI based on gui.py."""
+        main_layout = QGridLayout(self) # Changed to QGridLayout for better structure
         main_layout.setSpacing(10)
         
-        # === TOP ROW ===
-        top_row = QGridLayout()
-        top_row.setSpacing(10)
-        
-        # Navigation Data Section (top left)
-        self.create_navigation_group(top_row, 0, 0)
-        
-        # Flight Data Section (top right)
-        self.create_flight_data_group(top_row, 0, 1)
-        
-        main_layout.addLayout(top_row)
-        
-        # === BOTTOM ROW ===
-        bottom_row = QGridLayout()
-        bottom_row.setSpacing(10)
-        
-        # Radio Status Section (bottom left)
-        self.create_radio_status_group(bottom_row, 0, 0)
-        
-        # System Status Section (bottom right)
-        self.create_system_status_group(bottom_row, 0, 1)
-        
-        main_layout.addLayout(bottom_row)
-        
-        # Create event log at the bottom
-        bottom_section = QHBoxLayout()
-        self.create_event_log_group(bottom_section)
-        main_layout.addLayout(bottom_section)
-    
-    def create_mission_status_group(self, parent_layout):
-        """Create the mission status section"""
-        group_box = QGroupBox("Mission Status")
-        group_box.setStyleSheet("QGroupBox { font-weight: bold; }")
-        layout = QHBoxLayout(group_box)
-        
-        # Mission clock
-        clock_layout = QVBoxLayout()
-        self.mission_clock_label = QLabel("Mission Time")
-        self.mission_clock_label.setAlignment(Qt.AlignCenter)
-        self.mission_clock_value = QLabel("00:00:00")
-        self.mission_clock_value.setStyleSheet("color: #00ff00; font-size: 16pt; font-weight: bold;")
-        self.mission_clock_value.setAlignment(Qt.AlignCenter)
-        clock_layout.addWidget(self.mission_clock_label)
-        clock_layout.addWidget(self.mission_clock_value)
-        layout.addLayout(clock_layout)
-        
-        # GPS time
-        self.gps_clock = DigitalClockWidget()
-        self.gps_clock.setMinimumHeight(80)
-        layout.addWidget(self.gps_clock)
-        
-        # Current mission phase
-        phase_layout = QVBoxLayout()
-        phase_title = QLabel("Phase")
-        phase_title.setAlignment(Qt.AlignCenter)
-        self.mission_phase = QLabel("PRE-LAUNCH")
-        self.mission_phase.setStyleSheet("color: #ffff00; font-size: 14pt; font-weight: bold;")
-        self.mission_phase.setAlignment(Qt.AlignCenter)
-        phase_layout.addWidget(phase_title)
-        phase_layout.addWidget(self.mission_phase)
-        layout.addLayout(phase_layout)
-        
-        parent_layout.addWidget(group_box, 1)
-    
-    def create_quick_status_group(self, parent_layout):
-        """Create the quick status indicators"""
-        group_box = QGroupBox("Quick Status")
-        group_box.setStyleSheet("QGroupBox { font-weight: bold; }")
-        layout = QGridLayout(group_box)
-        layout.setSpacing(10)
-        
-        # Status indicators in a compact grid
-        self.sd_status = StatusIndicator("SD Card")
-        self.led_status = StatusIndicator("LED")
-        self.actuator_status = StatusIndicator("Actuator")
-        self.source_status = StatusIndicator("Source")
-        self.gps_status = StatusIndicator("GPS Valid")
-        
-        layout.addWidget(self.sd_status, 0, 0)
-        layout.addWidget(self.led_status, 0, 1)
-        layout.addWidget(self.actuator_status, 1, 0)
-        layout.addWidget(self.source_status, 1, 1)
-        layout.addWidget(self.gps_status, 2, 0)
-        
-        # Signal strength
-        signal_layout = QHBoxLayout()
-        layout.addLayout(signal_layout, 2, 1)
-        
-        rssi_label = QLabel("RSSI:")
-        self.rssi_value = QLabel("-100 dBm")
-        self.rssi_value.setAlignment(Qt.AlignRight)
-        signal_layout.addWidget(rssi_label)
-        signal_layout.addWidget(self.rssi_value)
-        
-        parent_layout.addWidget(group_box, 1)
-    
-    def create_flight_display_group(self, parent_layout, row, col, rowspan, colspan):
-        """Create the primary flight display group"""
-        group_box = QGroupBox("Flight Data")
-        group_box.setStyleSheet("QGroupBox { font-weight: bold; }")
-        layout = QGridLayout(group_box)
-        layout.setSpacing(10)
-        
-        # Replace artificial horizon with attitude display
-        attitude_frame = QFrame()
-        attitude_frame.setFrameShape(QFrame.StyledPanel)
-        attitude_frame.setFrameShadow(QFrame.Sunken)
-        attitude_frame.setStyleSheet("background-color: #1a1a1a;")
-        attitude_layout = QVBoxLayout(attitude_frame)
-        
-        # Add title
-        attitude_title = QLabel("Attitude Data")
-        attitude_title.setFont(QFont("Arial", 12, QFont.Bold))
-        attitude_title.setAlignment(Qt.AlignCenter)
-        attitude_layout.addWidget(attitude_title)
-        
-        # Add numeric attitude values in a grid
-        values_layout = QGridLayout()
-        values_layout.setSpacing(10)
-        
-        self.roll_value = self.add_digital_value(values_layout, "Roll", "0.0°", 0)
-        self.pitch_value = self.add_digital_value(values_layout, "Pitch", "0.0°", 1)
-        self.heading_value = self.add_digital_value(values_layout, "Heading", "0.0°", 2)
-        
-        attitude_layout.addLayout(values_layout)
-        attitude_layout.addStretch()
-        
-        layout.addWidget(attitude_frame, 0, 1, 2, 1)
-        
-        # Altitude and vertical speed (left column)
-        self.altitude_dial = SpeedDialWidget("Altitude", "m", 500)
-        self.altitude_dial.setMinimumSize(180, 180)
-        layout.addWidget(self.altitude_dial, 0, 0)
-        
-        self.vertical_speed_dial = SpeedDialWidget("Vertical Speed", "m/s", 20)
-        self.vertical_speed_dial.setMinimumSize(180, 180)
-        layout.addWidget(self.vertical_speed_dial, 1, 0)
-        
-        # Ground speed and stats (right column)
-        self.ground_speed_dial = SpeedDialWidget("Ground Speed", "m/s", 50)
-        self.ground_speed_dial.setMinimumSize(180, 180)
-        layout.addWidget(self.ground_speed_dial, 0, 2)
-        
-        # Mission progress stats
-        stats_frame = QFrame()
-        stats_frame.setFrameShape(QFrame.StyledPanel)
-        stats_frame.setFrameShadow(QFrame.Sunken)
-        stats_frame.setStyleSheet("background-color: #1a1a1a;")
-        
-        stats_layout = QVBoxLayout(stats_frame)
-        stats_layout.setSpacing(10)
-        
-        # Current altitude vs target
-        self.altitude_progress = PercentBar("Altitude Progress", 0, self.mission_target_alt)
-        stats_layout.addWidget(self.altitude_progress)
-        
-        # Stats/records
-        records_layout = QGridLayout()
-        records_layout.setColumnStretch(1, 1)
-        self.max_altitude_label = self.add_labeled_value(records_layout, "Max Alt:", "0.0 m", 0, 0)
-        self.max_speed_label = self.add_labeled_value(records_layout, "Max Speed:", "0.0 m/s", 1, 0)
-        self.max_vspeed_label = self.add_labeled_value(records_layout, "Max V-Speed:", "0.0 m/s", 2, 0)
-        stats_layout.addLayout(records_layout)
-        
-        layout.addWidget(stats_frame, 1, 2)
-        
-        parent_layout.addWidget(group_box, row, col, rowspan, colspan)
-    
-    def create_flight_data_group(self, parent_layout, row, col):
-        """Create the flight data section (top right)"""
-        group_box = QGroupBox("Flight Data")
-        group_box.setStyleSheet("""
-            QGroupBox {
-                border: 2px solid #3a3a3a;
-                border-radius: 8px;
-                margin-top: 1ex;
-                font-weight: bold;
-                color: #00ff00;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                subcontrol-position: top center;
-                padding: 0 5px;
-            }
-        """)
-        
-        flight_layout = QGridLayout()
-        
-        # Define parameters to display
-        flight_parameters = [
-            ("Altitude", "m", 0, 0, "Current altitude above ground level"),
-            ("Temperature", "°C", 0, 1, "Outside air temperature"),
-            ("Pressure", "hPa", 1, 0, "Atmospheric pressure"),
-            ("Vertical Speed", "m/s", 1, 1, "Current vertical velocity")
-        ]
-        
-        # Add parameter displays
-        for name, unit, row, col, tooltip in flight_parameters:
-            frame = QFrame()
-            frame.setFrameStyle(QFrame.Box | QFrame.Raised)
-            frame.setLineWidth(2)
-            frame.setToolTip(tooltip)
-            
-            layout = QVBoxLayout(frame)
-            layout.setSpacing(5)
-            
-            # Parameter name
-            title = QLabel(name)
-            title.setAlignment(Qt.AlignCenter)
-            title.setStyleSheet("""
-                font-weight: bold;
-                font-size: 14px;
-                color: #00ff00;
-            """)
-            layout.addWidget(title)
-            
-            # Value display
-            value = QLabel("--")
-            value.setAlignment(Qt.AlignCenter)
-            value.setStyleSheet("""
-                font-size: 24px;
-                font-weight: bold;
-                color: #ffffff;
-                background-color: #2a2a2a;
-                border-radius: 5px;
-                padding: 5px;
-            """)
-            layout.addWidget(value)
-            
-            # Unit label
-            if unit:
-                unit_label = QLabel(unit)
-                unit_label.setAlignment(Qt.AlignCenter)
-                unit_label.setStyleSheet("color: #888888;")
-                layout.addWidget(unit_label)
-            
-            flight_layout.addWidget(frame, row, col)
-            
-            # Store reference to the value label
-            key = name.lower().replace(" ", "_")
-            setattr(self, f"{key}_display", value)
-        
-        group_box.setLayout(flight_layout)
-        parent_layout.addWidget(group_box, row, col)
-    
-    def create_navigation_group(self, parent_layout, row, col):
-        """Create the navigation section (top left)"""
-        group_box = QGroupBox("Navigation")
-        group_box.setStyleSheet("""
-            QGroupBox {
-                border: 2px solid #3a3a3a;
-                border-radius: 8px;
-                margin-top: 1ex;
-                font-weight: bold;
-                color: #00ff00;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                subcontrol-position: top center;
-                padding: 0 5px;
-            }
-        """)
-        
-        nav_layout = QGridLayout()
+        # Navigation Data Section (top left in gui.py)
+        nav_group = QGroupBox("Navigation")
+        nav_layout = QGridLayout(nav_group) # Use QGridLayout for more control
         nav_layout.setSpacing(15)
         
-        # Add digital clock at the top
+        # Add digital clock (GPS Time)
         clock_frame = QFrame()
         clock_frame.setFrameStyle(QFrame.Box | QFrame.Raised)
-        clock_frame.setStyleSheet("""
-            QFrame {
-                border: 1px solid #3a3a3a;
-                border-radius: 6px;
-                background-color: #2a2a2a;
-            }
-        """)
-        clock_layout = QVBoxLayout(clock_frame)
+        clock_frame.setStyleSheet("QFrame { border: 1px solid #3a3a3a; border-radius: 6px; background-color: #2a2a2a; }")
+        clock_layout_v = QVBoxLayout(clock_frame) # QVBoxLayout for the clock
         self.gps_clock = DigitalClockWidget()
-        clock_layout.addWidget(self.gps_clock)
-        nav_layout.addWidget(clock_frame, 0, 0, 1, 2)
-        
-        # Add compass widgets in a horizontal layout
-        compass_layout = QHBoxLayout()
+        clock_layout_v.addWidget(self.gps_clock)
+        nav_layout.addWidget(clock_frame, 0, 0, 1, 2) # Span 2 columns
+
+        # Compass widgets
+        compass_widgets_layout = QHBoxLayout() # Horizontal layout for two compasses
         
         # Vehicle heading compass
-        compass_frame = QFrame()
-        compass_frame.setFrameStyle(QFrame.Box | QFrame.Raised)
-        compass_frame.setStyleSheet("""
-            QFrame {
-                border: 1px solid #3a3a3a;
-                border-radius: 6px;
-                background-color: #2a2a2a;
-                padding: 5px;
-            }
-            QLabel {
-                color: #00ff00;
-                font-weight: bold;
-                font-size: 12px;
-            }
-        """)
-        compass_layout_1 = QVBoxLayout(compass_frame)
-        compass_layout_1.setSpacing(5)
-        self.compass = CompassWidget()
-        compass_label = QLabel("Vehicle Heading")
-        compass_label.setAlignment(Qt.AlignCenter)
-        compass_layout_1.addWidget(compass_label)
-        compass_layout_1.addWidget(self.compass)
-        
+        vehicle_compass_frame = QFrame()
+        vehicle_compass_frame.setFrameStyle(QFrame.Box | QFrame.Raised)
+        vehicle_compass_frame.setStyleSheet("QFrame { border: 1px solid #3a3a3a; border-radius: 6px; background-color: #2a2a2a; padding: 5px; } QLabel { color: #00ff00; font-weight: bold; font-size: 12px; }")
+        vehicle_compass_v_layout = QVBoxLayout(vehicle_compass_frame)
+        vehicle_compass_v_layout.setSpacing(5)
+        self.vehicle_compass = CompassWidget()
+        vehicle_compass_label = QLabel("Vehicle Heading")
+        vehicle_compass_label.setAlignment(Qt.AlignCenter)
+        vehicle_compass_v_layout.addWidget(vehicle_compass_label)
+        vehicle_compass_v_layout.addWidget(self.vehicle_compass)
+        compass_widgets_layout.addWidget(vehicle_compass_frame)
+
         # Target bearing compass
-        target_frame = QFrame()
-        target_frame.setFrameStyle(QFrame.Box | QFrame.Raised)
-        target_frame.setStyleSheet("""
-            QFrame {
-                border: 1px solid #3a3a3a;
-                border-radius: 6px;
-                background-color: #2a2a2a;
-                padding: 5px;
-            }
-            QLabel {
-                color: #00ff00;
-                font-weight: bold;
-                font-size: 12px;
-            }
-        """)
-        compass_layout_2 = QVBoxLayout(target_frame)
-        compass_layout_2.setSpacing(5)
+        target_compass_frame = QFrame()
+        target_compass_frame.setFrameStyle(QFrame.Box | QFrame.Raised)
+        target_compass_frame.setStyleSheet("QFrame { border: 1px solid #3a3a3a; border-radius: 6px; background-color: #2a2a2a; padding: 5px; } QLabel { color: #00ff00; font-weight: bold; font-size: 12px; }")
+        target_compass_v_layout = QVBoxLayout(target_compass_frame)
+        target_compass_v_layout.setSpacing(5)
         self.target_compass = CompassWidget()
-        target_label = QLabel("Target Bearing")
-        target_label.setAlignment(Qt.AlignCenter)
-        compass_layout_2.addWidget(target_label)
-        compass_layout_2.addWidget(self.target_compass)
+        target_compass_label = QLabel("Target Bearing")
+        target_compass_label.setAlignment(Qt.AlignCenter)
+        target_compass_v_layout.addWidget(target_compass_label)
+        target_compass_v_layout.addWidget(self.target_compass)
+        compass_widgets_layout.addWidget(target_compass_frame)
         
-        compass_layout.addWidget(compass_frame)
-        compass_layout.addWidget(target_frame)
-        nav_layout.addLayout(compass_layout, 1, 0, 2, 2)
-        
-        # Add speed dials in a frame
+        nav_layout.addLayout(compass_widgets_layout, 1, 0, 1, 2) # Span 2 columns
+
+        # Speed dials
         dials_frame = QFrame()
         dials_frame.setFrameStyle(QFrame.Box | QFrame.Raised)
-        dials_frame.setStyleSheet("""
-            QFrame {
-                border: 1px solid #3a3a3a;
-                border-radius: 6px;
-                background-color: #2a2a2a;
-                padding: 5px;
-            }
-        """)
-        speed_dials_layout = QHBoxLayout(dials_frame)
-        speed_dials_layout.setSpacing(20)
+        dials_frame.setStyleSheet("QFrame { border: 1px solid #3a3a3a; border-radius: 6px; background-color: #2a2a2a; padding: 5px; }")
+        speed_dials_h_layout = QHBoxLayout(dials_frame)
+        speed_dials_h_layout.setSpacing(20)
         
         self.ground_speed_dial = SpeedDialWidget("Ground Speed", "m/s", max_value=50)
-        self.ground_speed_dial.setMinimumSize(150, 150)
-        self.vertical_speed_dial = SpeedDialWidget("Vertical Speed", "m/s", max_value=20)
-        self.vertical_speed_dial.setMinimumSize(150, 150)
+        self.ground_speed_dial.setMinimumSize(150,150)
+        self.vertical_speed_dial = SpeedDialWidget("Vertical Speed", "m/s", max_value=20, min_value=-20) # Assuming SpeedDial can handle min_value
+        self.vertical_speed_dial.setMinimumSize(150,150)
         
-        speed_dials_layout.addWidget(self.ground_speed_dial, stretch=1)
-        speed_dials_layout.addWidget(self.vertical_speed_dial, stretch=1)
-        
-        nav_layout.addWidget(dials_frame, 3, 0, 1, 2)
-        
-        group_box.setLayout(nav_layout)
-        parent_layout.addWidget(group_box, row, col)
-    
-    def create_system_status_group(self, parent_layout, row, col):
-        """Create the system status section (bottom right)"""
-        group_box = QGroupBox("System Status")
-        group_box.setStyleSheet("""
-            QGroupBox {
-                border: 2px solid #3a3a3a;
-                border-radius: 8px;
-                margin-top: 1ex;
-                font-weight: bold;
-                color: #00ff00;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                subcontrol-position: top center;
-                padding: 0 5px;
-            }
-        """)
-        
-        system_layout = QGridLayout()
-        
-        # Define parameters to display
-        system_parameters = [
-            ("SD Status", "", 0, 0, "SD Card Status"),
-            ("LED Status", "", 0, 1, "LED Status"),
-            ("Actuator Status", "", 1, 0, "Actuator System Status"),
-            ("Source", "", 1, 1, "Source Status")
+        speed_dials_h_layout.addWidget(self.ground_speed_dial, stretch=1)
+        speed_dials_h_layout.addWidget(self.vertical_speed_dial, stretch=1)
+        nav_layout.addWidget(dials_frame, 2, 0, 1, 2) # Span 2 columns
+
+        main_layout.addWidget(nav_group, 0, 0)
+
+        # Flight Data Section (top right)
+        flight_group = QGroupBox("Flight Data")
+        flight_layout_grid = QGridLayout(flight_group) # Use QGridLayout
+        flight_parameters = [
+            ("Altitude", "m", 0, 0, "Current altitude (Barometric)"), # Changed tooltip
+            ("Temperature", "°C", 0, 1, "Outside air temperature"),
+            ("Pressure", "hPa", 1, 0, "Atmospheric pressure"),
+            ("GPS Altitude", "m", 1, 1, "Current altitude (GPS MSL)") # Added GPS Altitude
         ]
-        
-        # Add parameter displays
-        for name, unit, row, col, tooltip in system_parameters:
-            frame = QFrame()
-            frame.setFrameStyle(QFrame.Box | QFrame.Raised)
-            frame.setLineWidth(2)
-            frame.setToolTip(tooltip)
-            
-            layout = QVBoxLayout(frame)
-            layout.setSpacing(5)
-            
-            # Parameter name
-            title = QLabel(name)
-            title.setAlignment(Qt.AlignCenter)
-            title.setStyleSheet("""
-                font-weight: bold;
-                font-size: 14px;
-                color: #00ff00;
-            """)
-            layout.addWidget(title)
-            
-            # Value display
-            value = QLabel("--")
-            value.setAlignment(Qt.AlignCenter)
-            value.setStyleSheet("""
-                font-size: 24px;
-                font-weight: bold;
-                color: #ffffff;
-                background-color: #2a2a2a;
-                border-radius: 5px;
-                padding: 5px;
-            """)
-            layout.addWidget(value)
-            
-            # Unit label if provided
-            if unit:
-                unit_label = QLabel(unit)
-                unit_label.setAlignment(Qt.AlignCenter)
-                unit_label.setStyleSheet("color: #888888;")
-                layout.addWidget(unit_label)
-            
-            system_layout.addWidget(frame, row, col)
-            
-            # Store reference to the value label
-            key = name.lower().replace(" ", "_")
-            setattr(self, f"{key}_display", value)
-        
-        group_box.setLayout(system_layout)
-        parent_layout.addWidget(group_box, row, col)
-    
-    def create_environmental_group(self, parent_layout):
-        """Create the environmental data section"""
-        group_box = QGroupBox("Environmental Data")
-        group_box.setStyleSheet("QGroupBox { font-weight: bold; }")
-        layout = QHBoxLayout(group_box)
-        
-        # Temperature display
-        temp_frame = QFrame()
-        temp_frame.setFrameShape(QFrame.StyledPanel)
-        temp_frame.setFrameShadow(QFrame.Sunken)
-        temp_frame.setStyleSheet("background-color: #1a1a1a;")
-        
-        temp_layout = QVBoxLayout(temp_frame)
-        temp_layout.setContentsMargins(10, 10, 10, 10)
-        
-        temp_title = QLabel("Temperature")
-        temp_title.setFont(QFont("Arial", 10, QFont.Bold))
-        temp_title.setAlignment(Qt.AlignCenter)
-        
-        self.temperature_value = QLabel("0.0 °C")
-        self.temperature_value.setStyleSheet("color: #00ff00; font-size: 16pt; font-weight: bold;")
-        self.temperature_value.setAlignment(Qt.AlignCenter)
-        
-        temp_layout.addWidget(temp_title)
-        temp_layout.addWidget(self.temperature_value)
-        
-        layout.addWidget(temp_frame)
-        
-        # Pressure display
-        pressure_frame = QFrame()
-        pressure_frame.setFrameShape(QFrame.StyledPanel)
-        pressure_frame.setFrameShadow(QFrame.Sunken)
-        pressure_frame.setStyleSheet("background-color: #1a1a1a;")
-        
-        pressure_layout = QVBoxLayout(pressure_frame)
-        pressure_layout.setContentsMargins(10, 10, 10, 10)
-        
-        pressure_title = QLabel("Pressure")
-        pressure_title.setFont(QFont("Arial", 10, QFont.Bold))
-        pressure_title.setAlignment(Qt.AlignCenter)
-        
-        self.pressure_value = QLabel("0.0 hPa")
-        self.pressure_value.setStyleSheet("color: #00ff00; font-size: 16pt; font-weight: bold;")
-        self.pressure_value.setAlignment(Qt.AlignCenter)
-        
-        pressure_layout.addWidget(pressure_title)
-        pressure_layout.addWidget(self.pressure_value)
-        
-        layout.addWidget(pressure_frame)
-        
-        # Altitude estimate from pressure
-        alt_frame = QFrame()
-        alt_frame.setFrameShape(QFrame.StyledPanel)
-        alt_frame.setFrameShadow(QFrame.Sunken)
-        alt_frame.setStyleSheet("background-color: #1a1a1a;")
-        
-        alt_layout = QVBoxLayout(alt_frame)
-        alt_layout.setContentsMargins(10, 10, 10, 10)
-        
-        alt_title = QLabel("Baro. Altitude")
-        alt_title.setFont(QFont("Arial", 10, QFont.Bold))
-        alt_title.setAlignment(Qt.AlignCenter)
-        
-        self.baro_altitude = QLabel("0.0 m")
-        self.baro_altitude.setStyleSheet("color: #00ff00; font-size: 16pt; font-weight: bold;")
-        self.baro_altitude.setAlignment(Qt.AlignCenter)
-        
-        alt_layout.addWidget(alt_title)
-        alt_layout.addWidget(self.baro_altitude)
-        
-        layout.addWidget(alt_frame)
-        
-        parent_layout.addWidget(group_box, 1)
-    
-    def create_event_log_group(self, parent_layout):
-        """Create the event log section"""
-        group_box = QGroupBox("Mission Events")
-        group_box.setStyleSheet("""
-            QGroupBox {
-                border: 2px solid #3a3a3a;
-                border-radius: 8px;
-                margin-top: 1ex;
-                font-weight: bold;
-                color: #00ff00;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                subcontrol-position: top center;
-                padding: 0 5px;
-            }
-        """)
-        layout = QVBoxLayout(group_box)
-        
-        # Use the existing event logger instead of creating a new one
-        layout.addWidget(self.event_logger)
-        
-        parent_layout.addWidget(group_box, 1)
-    
-    def add_labeled_value(self, parent_layout, label_text, value_text, row, col, is_highlight=False):
-        """Add a label and value pair to a layout"""
-        label = QLabel(label_text)
-        label.setFont(QFont("Arial", 9))
-        
-        value = QLabel(value_text)
-        if is_highlight:
-            value.setStyleSheet("color: #00ff00; font-weight: bold;")
-        else:
-            value.setStyleSheet("color: #ffffff;")
-        value.setFont(QFont("Arial", 9))
-        value.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        
-        parent_layout.addWidget(label, row, col * 2)
-        parent_layout.addWidget(value, row, col * 2 + 1)
-        
-        return value
-    
-    def add_large_value(self, parent_layout, label_text, initial_value, row):
-        """Add a label with a larger value display below it"""
-        container = QVBoxLayout()
-        
-        label = QLabel(label_text)
-        label.setAlignment(Qt.AlignCenter)
-        label.setFont(QFont("Arial", 10))
-        
-        value = QLabel(initial_value)
-        value.setAlignment(Qt.AlignCenter)
-        value.setStyleSheet("color: #00ff00; font-size: 18pt; font-weight: bold;")
-        
-        container.addWidget(label)
-        container.addWidget(value)
-        
-        parent_layout.addLayout(container, row, 0)
-        return value
-    
-    def add_digital_value(self, parent_layout, label_text, initial_value, row):
-        """Add a label with a digital-looking value display below it"""
-        container = QVBoxLayout()
-        
-        label = QLabel(label_text)
-        label.setAlignment(Qt.AlignCenter)
-        label.setFont(QFont("Arial", 10))
-        
-        value = QLabel(initial_value)
-        value.setAlignment(Qt.AlignCenter)
-        value.setStyleSheet("""
-            color: #00ff00; 
-            font-family: 'Consolas', 'Courier New', monospace;
-            font-size: 22pt; 
-            font-weight: bold;
-            background-color: #121212;
-            border: 1px solid #333333;
-            border-radius: 4px;
-            padding: 3px 8px;
-            letter-spacing: 1px;
-        """)
-        
-        container.addWidget(label)
-        container.addWidget(value)
-        
-        parent_layout.addLayout(container, row, 0)
-        return value
-    
-    def update_telemetry_display(self):
-        """Update all telemetry displays with current data"""
-        # Update speed dials
-        self.ground_speed_dial.setValue(self.telemetry_model.ground_speed)
-        self.vertical_speed_dial.setValue(self.telemetry_model.vertical_speed)
-        
-        # Update compass
-        self.compass.setBearing(self.telemetry_model.yaw)
-        
-        # Update GPS time
-        if self.telemetry_model.gps_time:
-            self.gps_clock.setTime(self.telemetry_model.gps_time)
-        
-        # Update flight data
-        self.altitude_display.setText(f"{self.telemetry_model.altitude:.1f}")
-        self.temperature_display.setText(f"{self.telemetry_model.temperature:.1f}")
-        self.pressure_display.setText(f"{self.telemetry_model.pressure:.1f}")
-        self.vertical_speed_display.setText(f"{self.telemetry_model.vertical_speed:.1f}")
-        
-        # Update radio status
-        self.rssi_display.setText(f"{self.telemetry_model.rssi}")
-        self.snr_display.setText(f"{self.telemetry_model.snr}")
-        self.ack_display.setText("Received" if self.telemetry_model.ack_received else "No ACK")
-        self.gps_display.setText("Fix" if self.telemetry_model.gps_valid else "No Fix")
-        
-        # Update system status
-        self.sd_status_display.setText("Active" if self.telemetry_model.sd_card_ok else "Inactive")
-        self.led_status_display.setText("Active" if self.telemetry_model.led_ok else "Inactive")
-        self.actuator_status_display.setText("Active" if self.telemetry_model.actuator_ok else "Inactive")
-        self.source_display.setText("Active" if self.telemetry_model.source_ok else "Inactive")
-        
-        # Update target bearing if we have both user location and vehicle location
-        if hasattr(self, 'user_lat') and hasattr(self, 'user_lon') and self.telemetry_model.gps_valid:
-            bearing = self.calculate_target_bearing(
-                self.user_lat, self.user_lon, 
-                self.telemetry_model.gps_lat, self.telemetry_model.gps_lon
-            )
-            self.target_compass.setBearing(bearing)
-    
-    def update_dynamic_displays(self):
-        """Update displays that need constant updating"""
-        # Update mission clock
-        self.mission_elapsed += 0.1
-        hours, rem = divmod(self.mission_elapsed, 3600)
-        minutes, seconds = divmod(rem, 60)
-        self.mission_clock_value.setText(f"{int(hours):02}:{int(minutes):02}:{int(seconds):02}")
-        
-        # Update battery status (simulated)
-        battery_level = 80 - (self.mission_elapsed / 3600) * 10  # Decrease 10% per hour
-        battery_voltage = 3.7 - (self.mission_elapsed / 3600) * 0.1  # Decrease 0.1V per hour
-        self.battery_progress.setValue(int(battery_level))
-        self.battery_progress.setFormat(f"{int(battery_level)}% ({battery_voltage:.1f}V)")
-    
-    def create_radio_status_group(self, parent_layout, row, col):
-        """Create the radio status section (bottom left)"""
-        group_box = QGroupBox("Radio Status")
-        group_box.setStyleSheet("""
-            QGroupBox {
-                border: 2px solid #3a3a3a;
-                border-radius: 8px;
-                margin-top: 1ex;
-                font-weight: bold;
-                color: #00ff00;
-            }
-            QGroupBox::title {
-                subcontrol-origin: margin;
-                subcontrol-position: top center;
-                padding: 0 5px;
-            }
-        """)
-        
-        radio_layout = QGridLayout()
-        
-        # Define parameters to display
+        self.add_parameters_to_layout(flight_parameters, flight_layout_grid)
+        main_layout.addWidget(flight_group, 0, 1)
+
+        # Radio Status Section (bottom left)
+        radio_group = QGroupBox("Radio Status")
+        radio_layout_grid = QGridLayout(radio_group) # Use QGridLayout
         radio_parameters = [
             ("RSSI", "dBm", 0, 0, "Received Signal Strength Indicator"),
             ("SNR", "dB", 0, 1, "Signal-to-Noise Ratio"),
             ("ACK", "", 1, 0, "Packet Acknowledgement Status"),
-            ("GPS", "", 1, 1, "GPS Fix Status")
+            ("GPS Status", "", 1, 1, "GPS Fix Status") # Changed from "GPS" to "GPS Status"
         ]
-        
-        # Add parameter displays
-        for name, unit, row, col, tooltip in radio_parameters:
+        self.add_parameters_to_layout(radio_parameters, radio_layout_grid)
+        main_layout.addWidget(radio_group, 1, 0)
+
+        # System Status Section (bottom right)
+        system_group = QGroupBox("System Status")
+        system_layout_grid = QGridLayout(system_group) # Use QGridLayout
+        system_parameters = [
+            ("SD Status", "", 0, 0, "SD Card Status"),
+            ("Actuator Status", "", 0, 1, "Actuator System Status"), # Changed position
+            ("Roll", "°", 1, 0, "IMU Roll"), # Added IMU data
+            ("Pitch", "°", 1, 1, "IMU Pitch"),
+            ("Yaw", "°", 2, 0, "IMU Yaw") # Added IMU Yaw, span if needed
+        ]
+        self.add_parameters_to_layout(system_parameters, system_layout_grid)
+        main_layout.addWidget(system_group, 1, 1)
+
+        # Set row/column stretch factors for balanced resizing
+        main_layout.setRowStretch(0, 1)
+        main_layout.setRowStretch(1, 1)
+        main_layout.setColumnStretch(0, 1)
+        main_layout.setColumnStretch(1, 1)
+
+    def add_parameters_to_layout(self, parameters, parent_layout):
+        """Helper to add parameter displays, from gui.py"""
+        for name, unit, row, col, tooltip in parameters:
             frame = QFrame()
             frame.setFrameStyle(QFrame.Box | QFrame.Raised)
-            frame.setLineWidth(2)
+            frame.setLineWidth(1) # Thinner border
             frame.setToolTip(tooltip)
+            frame.setStyleSheet("QFrame { border: 1px solid #444; border-radius: 5px; background-color: #2E2E2E; padding: 5px; }")
             
             layout = QVBoxLayout(frame)
-            layout.setSpacing(5)
+            layout.setSpacing(3) # Reduced spacing
+            layout.setContentsMargins(5,5,5,5) # Margins
             
-            # Parameter name
-            title = QLabel(name)
-            title.setAlignment(Qt.AlignCenter)
-            title.setStyleSheet("""
-                font-weight: bold;
-                font-size: 14px;
-                color: #00ff00;
-            """)
-            layout.addWidget(title)
+            title_label = QLabel(name)
+            title_label.setAlignment(Qt.AlignCenter)
+            title_label.setStyleSheet("font-weight: bold; font-size: 11pt; color: #00ff00;") # Smaller font
+            layout.addWidget(title_label)
             
-            # Value display
-            value = QLabel("--")
-            value.setAlignment(Qt.AlignCenter)
-            value.setStyleSheet("""
-                font-size: 24px;
-                font-weight: bold;
-                color: #ffffff;
-                background-color: #2a2a2a;
-                border-radius: 5px;
-                padding: 5px;
-            """)
-            layout.addWidget(value)
+            value_label = QLabel("--")
+            value_label.setAlignment(Qt.AlignCenter)
+            value_label.setStyleSheet("font-size: 16pt; font-weight: bold; color: #ffffff; background-color: #2a2a2a; border-radius: 4px; padding: 3px;") # Smaller font
+            layout.addWidget(value_label)
             
-            # Unit label
             if unit:
                 unit_label = QLabel(unit)
                 unit_label.setAlignment(Qt.AlignCenter)
-                unit_label.setStyleSheet("color: #888888;")
+                unit_label.setStyleSheet("color: #aaaaaa; font-size: 9pt;") # Smaller font
                 layout.addWidget(unit_label)
             
-            radio_layout.addWidget(frame, row, col)
+            parent_layout.addWidget(frame, row, col)
+            self.status_widgets[name.lower().replace(" ", "_")] = value_label # Store with underscore for consistency
+
+    def update_parameter(self, name, value, format_str="{:.1f}"):
+        """Update a specific parameter display, from gui.py"""
+        widget_key = name.lower().replace(" ", "_")
+        if widget_key in self.status_widgets:
+            widget = self.status_widgets[widget_key]
+            try:
+                if isinstance(value, str): # If value is already a string (e.g. "Active", "No Fix")
+                    formatted_value = value
+                else:
+                    formatted_value = format_str.format(float(value))
+                widget.setText(formatted_value)
+            except ValueError:
+                 widget.setText(str(value)) # Fallback for non-numeric or unformattable
             
-            # Store reference to the value label
-            key = name.lower().replace(" ", "_")
-            setattr(self, f"{key}_display", value)
+            # Visual feedback for RSSI from gui.py
+            if widget_key == "rssi":
+                try:
+                    v = float(value)
+                    if v > -70:
+                        widget.setStyleSheet("font-size: 16pt; font-weight: bold; color: #00ff00; background-color: #2a2a2a; border-radius: 4px; padding: 3px;")
+                    elif v > -90:
+                        widget.setStyleSheet("font-size: 16pt; font-weight: bold; color: #ffff00; background-color: #2a2a2a; border-radius: 4px; padding: 3px;")
+                    else:
+                        widget.setStyleSheet("font-size: 16pt; font-weight: bold; color: #ff0000; background-color: #2a2a2a; border-radius: 4px; padding: 3px;")
+                except ValueError:
+                    pass # Non-numeric value, keep default style
+
+    def calculate_vertical_speed(self, current_altitude):
+        """Calculate vertical speed based on altitude changes, from gui.py"""
+        if self.last_altitude is None or self.last_altitude_time is None:
+            self.last_altitude = current_altitude
+            self.last_altitude_time = time.time()
+            return 0.0
         
-        # Add packet interval display if needed
-        # self.last_packet_label = QLabel("Packet Interval: --")
-        # self.last_packet_label.setStyleSheet(...)
-        # radio_layout.addWidget(self.last_packet_label, 2, 0, 1, 2)
+        now = time.time()
+        time_diff = now - self.last_altitude_time
         
-        group_box.setLayout(radio_layout)
-        parent_layout.addWidget(group_box, row, col)
+        if time_diff < 0.1:  # Avoid division by very small numbers or if time hasn't advanced
+            return getattr(self, 'last_vertical_speed', 0.0) # Return last known speed
+            
+        altitude_diff = current_altitude - self.last_altitude
+        vertical_speed = altitude_diff / time_diff
+        
+        self.last_altitude = current_altitude
+        self.last_altitude_time = now
+        self.last_vertical_speed = vertical_speed # Store for next potential quick return
+        
+        return vertical_speed
+
+    def update_indicators_from_model(self):
+        """Update dashboard indicators with data from telemetry_model."""
+        data = self.telemetry_model.get_latest_data()
+
+        # Navigation
+        if data.get('gps_valid') and data.get('gps_lat') != 0 and data.get('gps_lon') != 0:
+            # Vehicle heading (yaw from IMU or calculated from GPS if available)
+            self.vehicle_compass.setBearing(data.get('fYaw', 0.0)) # Prefer IMU Yaw
+            # Target bearing would be calculated by MapController and signaled
+        else:
+            self.vehicle_compass.setBearing(0.0)
+
+        self.ground_speed_dial.setValue(data.get('gps_speed', 0.0))
+        
+        # Calculate and set vertical speed
+        baro_alt = data.get('altitude', None)
+        if baro_alt is not None:
+            vertical_speed = self.calculate_vertical_speed(baro_alt)
+            self.vertical_speed_dial.setValue(vertical_speed)
+            self.update_parameter("Vertical Speed", vertical_speed) # Also update label if exists
+        else:
+            self.vertical_speed_dial.setValue(0.0)
+            self.update_parameter("Vertical Speed", 0.0)
+
+
+        if data.get('gps_time', 0) > 0:
+            self.gps_clock.setTime(data.get('gps_time'))
+
+        # Flight Data
+        self.update_parameter("Altitude", data.get('altitude', 0.0))
+        self.update_parameter("Temperature", data.get('temperature', 0.0))
+        self.update_parameter("Pressure", data.get('pressure', 0.0))
+        self.update_parameter("GPS Altitude", data.get('gps_alt', 0.0))
+
+        # Radio Status
+        self.update_parameter("RSSI", data.get('rssi', 0), format_str="{:.0f}")
+        self.update_parameter("SNR", data.get('snr', 0), format_str="{:.0f}")
+        self.update_parameter("ACK", "Yes" if data.get('ack', 0) == 1 else "No", format_str="{}")
+        self.update_parameter("GPS Status", "Fix" if data.get('gps_valid', False) else "No Fix", format_str="{}")
+
+        # System Status
+        self.update_parameter("SD Status", "Active" if data.get('sd_status', False) else "Inactive", format_str="{}")
+        self.update_parameter("Actuator Status", "Active" if data.get('actuator_status', False) else "Inactive", format_str="{}")
+        self.update_parameter("Roll", data.get('fRoll', 0.0))
+        self.update_parameter("Pitch", data.get('fPitch', 0.0))
+        self.update_parameter("Yaw", data.get('fYaw', 0.0))
+
+    # Placeholder for target bearing updates if MapController signals it
+    def update_target_bearing(self, bearing):
+        self.target_compass.setBearing(bearing)
+
+    # def update_dynamic_displays(self):
+        # """Update displays that change over time, like mission clock."""
+        # if self.launch_time:
+        #     elapsed = time.time() - self.launch_time
+        #     hours, rem = divmod(elapsed, 3600)
+        #     minutes, seconds = divmod(rem, 60)
+            # self.mission_clock.update_time(hours, minutes, seconds) # If mission clock is re-added

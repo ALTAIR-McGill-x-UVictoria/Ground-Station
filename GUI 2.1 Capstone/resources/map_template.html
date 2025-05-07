@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Flight Computer Tracking</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+    <style>
+        html, body, #map {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+        .info-panel {
+            padding: 8px;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: #fff;
+            border-radius: 5px;
+            font-family: Arial, sans-serif;
+        }
+        .info-value {
+            color: #00ff00;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    
+    <script>
+        // Initialize map
+        var map = L.map('map').setView([45.5017, -73.5673], 13);
+        
+        // Add default tile layer (OpenStreetMap)
+        var osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; <a href="https://openstreetmap.org/copyright">OpenStreetMap contributors</a>'
+        }).addTo(map);
+        
+        // Add satellite layer
+        var satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            maxZoom: 19,
+            attribution: 'Imagery &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community'
+        });
+        
+        // Add terrain layer
+        var terrain = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+            maxZoom: 17,
+            attribution: 'Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, <a href="http://viewfinderpanoramas.org">SRTM</a> | Map style: &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (<a href="https://creativecommons.org/licenses/by-sa/3.0/">CC-BY-SA</a>)'
+        });
+        
+        // Create baseMaps object
+        var baseMaps = {
+            "OpenStreetMap": osm,
+            "Satellite": satellite,
+            "Terrain": terrain
+        };
+        
+        // Initialize markers
+        var fcMarker = null;
+        var userMarker = null;
+        var flightPath = L.polyline([], {color: 'red', weight: 3}).addTo(map);
+        
+        // Add distance line between FC and ground station
+        var distanceLine = L.polyline([], {color: 'yellow', weight: 2, dashArray: '5, 10'}).addTo(map);
+        
+        // Add info panel
+        var infoPanel = L.control({position: 'bottomleft'});
+        infoPanel.onAdd = function(map) {
+            this._div = L.DomUtil.create('div', 'info-panel');
+            this.update(0, 0);
+            return this._div;
+        };
+        infoPanel.update = function(distance, bearing) {
+            this._div.innerHTML = '<div>Distance: <span class="info-value">' + 
+                                 distance.toFixed(1) + ' km</span><br>' +
+                                 'Bearing: <span class="info-value">' + 
+                                 bearing.toFixed(1) + '°</span></div>';
+        };
+        infoPanel.addTo(map);
+        
+        // Initialize QWebChannel
+        var handler = null;
+        new QWebChannel(qt.webChannelTransport, function(channel) {
+            handler = channel.objects.handler;
+            // Send message that map is ready
+            handler.handleMessage("mapReady", "");
+        });
+        
+        // Update flight computer marker
+        function updateFCMarker(lat, lon, alt, heading) {
+            if (!lat || !lon || lat === 0 || lon === 0) {
+                return false;
+            }
+            
+            var latLng = [lat, lon];
+            
+            if (fcMarker === null) {
+                // Create marker if it doesn't exist
+                fcMarker = L.marker(latLng, {
+                    icon: L.icon({
+                        iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+                        shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+                        iconSize: [25, 41],
+                        iconAnchor: [12, 41],
+                        popupAnchor: [1, -34],
+                        shadowSize: [41, 41]
+                    })
+                }).addTo(map);
+                fcMarker.bindPopup("Flight Computer<br>Alt: " + alt.toFixed(1) + "m");
+            } else {
+                // Update marker position
+                fcMarker.setLatLng(latLng);
+                fcMarker.getPopup().setContent("Flight Computer<br>Alt: " + alt.toFixed(1) + "m");
+            }
+            
+            // Add point to flight path
+            flightPath.addLatLng(latLng);
+            
+            // Update distance line if user marker exists
+            if (userMarker) {
+                updateDistanceLine();
+            }
+            
+            return true;
+        }
+        
+        // Update user marker
+        function updateUserMarker(lat, lon) {
+            if (!lat || !lon) {
+                return false;
+            }
+            
+            var latLng = [lat, lon];
+            
+            if (userMarker === null) {
+                // Create marker if it doesn't exist
+                userMarker = L.marker(latLng, {
+                    icon: L.icon({
+                        iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
+                        shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+                        iconSize: [25, 41],
+                        iconAnchor: [12, 41],
+                        popupAnchor: [1, -34],
+                        shadowSize: [41, 41]
+                    })
+                }).addTo(map);
+                userMarker.bindPopup("Ground Station");
+            } else {
+                // Update marker position
+                userMarker.setLatLng(latLng);
+            }
+            
+            // Update distance line if FC marker exists
+            if (fcMarker) {
+                updateDistanceLine();
+            }
+            
+            return true;
+        }
+        
+        // Update distance line between user and FC
+        function updateDistanceLine() {
+            if (!userMarker || !fcMarker) {
+                return;
+            }
+            
+            var userLatLng = userMarker.getLatLng();
+            var fcLatLng = fcMarker.getLatLng();
+            
+            // Update line
+            distanceLine.setLatLngs([
+                [userLatLng.lat, userLatLng.lng],
+                [fcLatLng.lat, fcLatLng.lng]
+            ]);
+            
+            // Calculate distance and bearing
+            var distance = calculateDistance(
+                userLatLng.lat, userLatLng.lng,
+                fcLatLng.lat, fcLatLng.lng
+            );
+            
+            var bearing = calculateBearing(
+                userLatLng.lat, userLatLng.lng,
+                fcLatLng.lat, fcLatLng.lng
+            );
+            
+            // Update info panel
+            infoPanel.update(distance, bearing);
+        }
+        
+        // Calculate distance between two points in km (Haversine formula)
+        function calculateDistance(lat1, lon1, lat2, lon2) {
+            var R = 6371; // Radius of the earth in km
+            var dLat = deg2rad(lat2 - lat1);
+            var dLon = deg2rad(lon2 - lon1); 
+            var a = 
+                Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * 
+                Math.sin(dLon/2) * Math.sin(dLon/2); 
+            var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
+            var d = R * c; // Distance in km
+            return d;
+        }
+        
+        // Calculate bearing between two points
+        function calculateBearing(lat1, lon1, lat2, lon2) {
+            lat1 = deg2rad(lat1);
+            lon1 = deg2rad(lon1);
+            lat2 = deg2rad(lat2);
+            lon2 = deg2rad(lon2);
+            
+            var y = Math.sin(lon2 - lon1) * Math.cos(lat2);
+            var x = Math.cos(lat1) * Math.sin(lat2) -
+                    Math.sin(lat1) * Math.cos(lat2) * Math.cos(lon2 - lon1);
+            var brng = Math.atan2(y, x);
+            
+            return (rad2deg(brng) + 360) % 360;
+        }
+        
+        function deg2rad(deg) {
+            return deg * (Math.PI/180);
+        }
+        
+        function rad2deg(rad) {
+            return rad * (180/Math.PI);
+        }
+        
+        // Change map type
+        function setMapType(type) {
+            map.removeLayer(osm);
+            map.removeLayer(satellite);
+            map.removeLayer(terrain);
+            
+            if (type === "OpenStreetMap") {
+                osm.addTo(map);
+            } else if (type === "Satellite") {
+                satellite.addTo(map);
+            } else if (type === "Terrain") {
+                terrain.addTo(map);
+            }
+        }
+        
+        // Center map on a point
+        function centerMap(lat, lon, zoom) {
+            if (!lat || !lon) return;
+            map.setView([lat, lon], zoom || map.getZoom());
+        }
+        
+        // Clear flight path
+        function clearFlightPath() {
+            flightPath.setLatLngs([]);
+        }
+        
+        // Handle map clicks
+        map.on('click', function(e) {
+            if (handler) {
+                handler.handleMessage("mapClick", e.latlng.lat + "," + e.latlng.lng);
+            }
+        });
+        
+        // Handle marker clicks
+        function setupMarkerEvents(marker, type) {
+            if (marker) {
+                marker.on('click', function() {
+                    if (handler) {
+                        handler.handleMessage("markerClick", type);
+                    }
+                });
+            }
+        }
+    </script>
+</body>
+</html>

@@ -1,12 +1,12 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, 
     QLabel, QComboBox, QGroupBox, QSlider, QSpinBox, 
-    QCheckBox, QLineEdit, QFrame
+    QLineEdit, QFrame # Removed QCheckBox
 )
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt # Removed QTimer
 
 class CommandPanel(QWidget):
-    """Panel for sending commands to the flight computer"""
+    """Panel for sending commands, structured like gui.py"""
     
     def __init__(self, command_controller, serial_controller, 
                  connection_model, settings_model, parent=None):
@@ -21,290 +21,203 @@ class CommandPanel(QWidget):
         
         # Connect signals
         self.connection_model.connection_changed.connect(self.update_button_states)
-    
+        # Initialize button states
+        self.update_button_states(self.connection_model.is_connected())
+
     def setup_ui(self):
-        """Set up the command panel UI"""
+        """Set up the command panel UI based on gui.py."""
         layout = QVBoxLayout(self)
         layout.setSpacing(10)
         
         # Connection section
         self.create_connection_section(layout)
-        
-        # Add separator
-        separator = QFrame()
-        separator.setFrameShape(QFrame.HLine)
-        separator.setFrameShadow(QFrame.Sunken)
-        layout.addWidget(separator)
-        
-        # LED control section
-        self.create_led_control_section(layout)
-        
-        # Add separator
-        separator = QFrame()
-        separator.setFrameShape(QFrame.HLine)
-        separator.setFrameShadow(QFrame.Sunken)
-        layout.addWidget(separator)
-        
-        # Source LED control section
-        self.create_source_control_section(layout)
-        
-        # Add separator
-        separator = QFrame()
-        separator.setFrameShape(QFrame.HLine)
-        separator.setFrameShadow(QFrame.Sunken)
-        layout.addWidget(separator)
+        layout.addWidget(self.create_separator())
         
         # SD card control section
         self.create_sd_control_section(layout)
+        layout.addWidget(self.create_separator())
         
-        # Add separator
+        # LED control section
+        self.create_led_control_section(layout, "LED Control", "LED", 
+                                        self.send_led_intensity_command, self.send_led_blink_command)
+        layout.addWidget(self.create_separator())
+        
+        # Source LED control section
+        self.create_led_control_section(layout, "Source Control", "Source",
+                                        self.send_source_intensity_command, self.send_source_blink_command)
+        layout.addWidget(self.create_separator())
+
+        # System control section (Ping)
+        self.create_system_control_section(layout)
+        layout.addWidget(self.create_separator())
+
+        # Manual command section
+        self.create_manual_command_section(layout)
+        
+        layout.addStretch(1) # Push all groups to the top
+        
+        self.update_button_states(self.connection_model.is_connected())
+
+    def create_separator(self):
         separator = QFrame()
         separator.setFrameShape(QFrame.HLine)
         separator.setFrameShadow(QFrame.Sunken)
-        layout.addWidget(separator)
-        
-        # Other commands section
-        self.create_other_commands_section(layout)
-        
-        # Stretch to fill remaining space
-        layout.addStretch(1)
-        
-        # Set initial button states
-        self.update_button_states(self.connection_model.connected)
-    
+        return separator
+
     def create_connection_section(self, parent_layout):
-        """Create connection control section"""
         group = QGroupBox("Connection")
         layout = QVBoxLayout(group)
         
-        # Port selection row
         port_layout = QHBoxLayout()
-        port_label = QLabel("Port:")
+        port_layout.addWidget(QLabel("Port:"))
         self.port_selector = QComboBox()
         self.refresh_ports()
-        port_layout.addWidget(port_label)
         port_layout.addWidget(self.port_selector, 1)
         
-        # Refresh button
         refresh_button = QPushButton("Refresh")
         refresh_button.clicked.connect(self.refresh_ports)
         port_layout.addWidget(refresh_button)
         layout.addLayout(port_layout)
         
-        # Connect button
         self.connect_button = QPushButton("Connect")
         self.connect_button.clicked.connect(self.toggle_connection)
         layout.addWidget(self.connect_button)
         
         parent_layout.addWidget(group)
-    
-    def create_led_control_section(self, parent_layout):
-        """Create LED control section"""
-        group = QGroupBox("LED Control")
-        layout = QVBoxLayout(group)
-        
-        # LED intensity slider
-        intensity_layout = QHBoxLayout()
-        intensity_label = QLabel("Intensity:")
-        self.led_slider = QSlider(Qt.Horizontal)
-        self.led_slider.setRange(0, 255)
-        self.led_slider.setValue(0)
-        
-        self.led_value = QSpinBox()
-        self.led_value.setRange(0, 255)
-        self.led_value.setValue(0)
-        
-        # Connect slider and spin box
-        self.led_slider.valueChanged.connect(self.led_value.setValue)
-        self.led_value.valueChanged.connect(self.led_slider.setValue)
-        
-        intensity_layout.addWidget(intensity_label)
-        intensity_layout.addWidget(self.led_slider, 1)
-        intensity_layout.addWidget(self.led_value)
-        layout.addLayout(intensity_layout)
-        
-        # LED set button
-        self.led_set_button = QPushButton("Set LED Intensity")
-        self.led_set_button.clicked.connect(self.set_led_intensity)
-        layout.addWidget(self.led_set_button)
-        
-        # LED blink controls
-        blink_layout = QHBoxLayout()
-        blink_label = QLabel("Blink (ms):")
-        self.led_blink_value = QSpinBox()
-        self.led_blink_value.setRange(100, 2000)
-        self.led_blink_value.setValue(500)
-        self.led_blink_value.setSingleStep(100)
-        
-        blink_layout.addWidget(blink_label)
-        blink_layout.addWidget(self.led_blink_value, 1)
-        
-        self.led_blink_button = QPushButton("Blink LED")
-        self.led_blink_button.clicked.connect(self.set_led_blink)
-        
-        layout.addLayout(blink_layout)
-        layout.addWidget(self.led_blink_button)
-        
-        parent_layout.addWidget(group)
-    
-    def create_source_control_section(self, parent_layout):
-        """Create source LED control section"""
-        group = QGroupBox("Source LED Control")
-        layout = QVBoxLayout(group)
-        
-        # Source intensity slider
-        intensity_layout = QHBoxLayout()
-        intensity_label = QLabel("Intensity:")
-        self.source_slider = QSlider(Qt.Horizontal)
-        self.source_slider.setRange(0, 255)
-        self.source_slider.setValue(0)
-        
-        self.source_value = QSpinBox()
-        self.source_value.setRange(0, 255)
-        self.source_value.setValue(0)
-        
-        # Connect slider and spin box
-        self.source_slider.valueChanged.connect(self.source_value.setValue)
-        self.source_value.valueChanged.connect(self.source_slider.setValue)
-        
-        intensity_layout.addWidget(intensity_label)
-        intensity_layout.addWidget(self.source_slider, 1)
-        intensity_layout.addWidget(self.source_value)
-        layout.addLayout(intensity_layout)
-        
-        # Source set button
-        self.source_set_button = QPushButton("Set Source LED")
-        self.source_set_button.clicked.connect(self.set_source_intensity)
-        layout.addWidget(self.source_set_button)
-        
-        # Source blink controls
-        blink_layout = QHBoxLayout()
-        blink_label = QLabel("Blink (ms):")
-        self.source_blink_value = QSpinBox()
-        self.source_blink_value.setRange(100, 2000)
-        self.source_blink_value.setValue(500)
-        self.source_blink_value.setSingleStep(100)
-        
-        blink_layout.addWidget(blink_label)
-        blink_layout.addWidget(self.source_blink_value, 1)
-        
-        self.source_blink_button = QPushButton("Blink Source")
-        self.source_blink_button.clicked.connect(self.set_source_blink)
-        
-        layout.addLayout(blink_layout)
-        layout.addWidget(self.source_blink_button)
-        
-        parent_layout.addWidget(group)
-    
+
     def create_sd_control_section(self, parent_layout):
-        """Create SD card control section"""
         group = QGroupBox("SD Card Control")
         layout = QVBoxLayout(group)
         
-        # SD card activate button
         self.sd_activate_button = QPushButton("Activate SD Logging")
-        self.sd_activate_button.clicked.connect(self.activate_sd)
+        self.sd_activate_button.clicked.connect(self.activate_sd_logging)
         layout.addWidget(self.sd_activate_button)
         
         parent_layout.addWidget(group)
-    
-    def create_other_commands_section(self, parent_layout):
-        """Create other commands section"""
-        group = QGroupBox("Other Commands")
+
+    def create_led_control_section(self, parent_layout, group_title, led_prefix, intensity_cmd_func, blink_cmd_func):
+        group = QGroupBox(group_title)
         layout = QVBoxLayout(group)
         
-        # Custom command
-        command_layout = QHBoxLayout()
-        self.custom_command = QLineEdit()
-        self.custom_command.setPlaceholderText("Enter custom command...")
-        self.send_button = QPushButton("Send")
-        self.send_button.clicked.connect(self.send_custom_command)
+        # Intensity Control
+        intensity_layout = QHBoxLayout()
+        intensity_layout.addWidget(QLabel("Intensity:"))
         
-        command_layout.addWidget(self.custom_command, 1)
-        command_layout.addWidget(self.send_button)
-        layout.addLayout(command_layout)
+        led_intensity_spinbox = QSpinBox()
+        led_intensity_spinbox.setRange(0, 255)
+        setattr(self, f"{led_prefix.lower()}_intensity_spinbox", led_intensity_spinbox) # e.g., self.led_intensity_spinbox
+        intensity_layout.addWidget(led_intensity_spinbox)
         
-        # Ping button
+        set_intensity_button = QPushButton(f"Set {led_prefix} Intensity")
+        set_intensity_button.clicked.connect(intensity_cmd_func)
+        setattr(self, f"{led_prefix.lower()}_set_intensity_button", set_intensity_button)
+        intensity_layout.addWidget(set_intensity_button)
+        layout.addLayout(intensity_layout)
+        
+        # Blink Control
+        blink_layout = QHBoxLayout()
+        blink_layout.addWidget(QLabel("Delay (ms):"))
+        
+        blink_delay_spinbox = QSpinBox()
+        blink_delay_spinbox.setRange(100, 2000)
+        blink_delay_spinbox.setSingleStep(100)
+        blink_delay_spinbox.setValue(500)
+        setattr(self, f"{led_prefix.lower()}_blink_delay_spinbox", blink_delay_spinbox)
+        blink_layout.addWidget(blink_delay_spinbox)
+        
+        blink_led_button = QPushButton(f"Blink {led_prefix}")
+        blink_led_button.clicked.connect(blink_cmd_func)
+        setattr(self, f"{led_prefix.lower()}_blink_button", blink_led_button)
+        blink_layout.addWidget(blink_led_button)
+        layout.addLayout(blink_layout)
+        
+        parent_layout.addWidget(group)
+
+    def create_system_control_section(self, parent_layout):
+        group = QGroupBox("System Control")
+        layout = QVBoxLayout(group)
+        
         self.ping_button = QPushButton("Ping Flight Computer")
-        self.ping_button.clicked.connect(self.send_ping)
+        self.ping_button.clicked.connect(self.send_ping_command)
         layout.addWidget(self.ping_button)
         
         parent_layout.addWidget(group)
-    
-    def refresh_ports(self):
-        """Refresh the list of available serial ports"""
-        self.port_selector.clear()
+
+    def create_manual_command_section(self, parent_layout):
+        group = QGroupBox("Manual Command")
+        layout = QVBoxLayout(group)
         
-        # Get available ports from the serial controller
+        manual_input_layout = QHBoxLayout()
+        self.manual_command_input = QLineEdit()
+        self.manual_command_input.setPlaceholderText("Enter command...")
+        self.manual_command_input.returnPressed.connect(self.send_manual_command_text) # Send on Enter
+        manual_input_layout.addWidget(self.manual_command_input)
+        
+        self.send_manual_button = QPushButton("Send")
+        self.send_manual_button.clicked.connect(self.send_manual_command_text)
+        manual_input_layout.addWidget(self.send_manual_button)
+        layout.addLayout(manual_input_layout)
+        
+        parent_layout.addWidget(group)
+
+    def refresh_ports(self):
+        self.port_selector.clear()
         ports = self.serial_controller.get_available_ports()
         self.port_selector.addItems(ports)
-        
-        # Select previous port if it's still available
-        if self.connection_model.port:
-            index = self.port_selector.findText(self.connection_model.port)
+        if self.connection_model.get_port():
+            index = self.port_selector.findText(self.connection_model.get_port())
             if index >= 0:
                 self.port_selector.setCurrentIndex(index)
-    
+
     def toggle_connection(self):
-        """Toggle serial connection"""
-        if not self.connection_model.connected:
-            # Connect
+        if not self.connection_model.is_connected():
             port = self.port_selector.currentText()
             if port:
-                baud_rate = self.settings_model.get('serial.baud_rate', 115200)
-                success = self.serial_controller.connect(port, baud_rate)
-                if success:
-                    self.connect_button.setText("Disconnect")
+                baud_rate = self.settings_model.get('serial.baud_rate', 115200) # Default from gui.py
+                self.serial_controller.connect(port, baud_rate)
         else:
-            # Disconnect
             self.serial_controller.disconnect()
-            self.connect_button.setText("Connect")
-    
+
     def update_button_states(self, connected):
-        """Update button states based on connection status"""
-        # Update connect button text
         self.connect_button.setText("Disconnect" if connected else "Connect")
-        
-        # Enable/disable command buttons
-        self.led_set_button.setEnabled(connected)
-        self.led_blink_button.setEnabled(connected)
-        self.source_set_button.setEnabled(connected)
-        self.source_blink_button.setEnabled(connected)
+        self.port_selector.setEnabled(not connected)
+
+        # Enable/disable all command buttons based on connection
         self.sd_activate_button.setEnabled(connected)
-        self.send_button.setEnabled(connected)
+        
+        self.led_set_intensity_button.setEnabled(connected)
+        self.led_blink_button.setEnabled(connected)
+        self.source_set_intensity_button.setEnabled(connected)
+        self.source_blink_button.setEnabled(connected)
+        
         self.ping_button.setEnabled(connected)
-    
-    def set_led_intensity(self):
-        """Set LED intensity"""
-        intensity = self.led_value.value()
-        self.command_controller.send_led_command(intensity)
-    
-    def set_led_blink(self):
-        """Set LED blink rate"""
-        delay_ms = self.led_blink_value.value()
-        self.command_controller.send_blink_command(delay_ms)
-    
-    def set_source_intensity(self):
-        """Set source LED intensity"""
-        intensity = self.source_value.value()
-        self.command_controller.send_source_command(intensity)
-    
-    def set_source_blink(self):
-        """Set source LED blink rate"""
-        delay_ms = self.source_blink_value.value()
-        self.command_controller.send_source_blink_command(delay_ms)
-    
-    def activate_sd(self):
-        """Activate SD card logging"""
+        self.send_manual_button.setEnabled(connected)
+        self.manual_command_input.setEnabled(connected)
+
+    def activate_sd_logging(self):
         self.command_controller.activate_sd()
-    
-    def send_custom_command(self):
-        """Send custom command"""
-        command = self.custom_command.text().strip()
+
+    def send_led_intensity_command(self):
+        intensity = self.led_intensity_spinbox.value()
+        self.command_controller.send_led_command(intensity)
+
+    def send_led_blink_command(self):
+        delay = self.led_blink_delay_spinbox.value()
+        self.command_controller.send_blink_command(delay)
+
+    def send_source_intensity_command(self):
+        intensity = self.source_intensity_spinbox.value()
+        self.command_controller.send_source_command(intensity)
+
+    def send_source_blink_command(self):
+        delay = self.source_blink_delay_spinbox.value()
+        self.command_controller.send_source_blink_command(delay)
+
+    def send_ping_command(self):
+        self.command_controller.send_ping()
+
+    def send_manual_command_text(self):
+        command = self.manual_command_input.text().strip()
         if command:
             self.command_controller.send_command(command)
-            self.custom_command.clear()
-    
-    def send_ping(self):
-        """Send ping command"""
-        self.command_controller.send_ping()
+            # self.manual_command_input.clear() # Optional: clear after sending

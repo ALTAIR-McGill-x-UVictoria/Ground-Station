@@ -1,0 +1,26 @@
+,,,,
+From Control to Power board,,,,
+Timestamp,Time of data capture,uint32,0x00,4
+Pressure,Atmospheric pressure,uint32,0x04,4
+Altitude,Altitude,uint32,0x08,4
+Temperature,Temperature probe reading,uint32,0x0C,4
+Linear Acceleration X,X-component (m/s^2),float32,0x10,4
+Linear Acceleration Y,Y-component (m/s^2),float32,0x14,4
+Linear Acceleration Z,Z-component (m/s^2),float32,0x18,4
+Angular Velocity X,X-axis velocity (deg/s),float32,0x1C,4
+Angular Velocity Y,Y-axis velocity (deg/s),float32,0x20,4
+Angular Velocity Z,Z-axis velocity (deg/s),float32,0x24,4
+Orientation Yaw,Yaw (deg),float32,0x28,4
+Orientation Pitch,Pitch (deg),float32,0x2C,4
+Orientation Roll,Roll (deg),float32,0x2E,4
+Status Msg Length,Length of the variable data section,uint16,0x30,2
+Status Msg,Extra data with dynamic length,byte[],0x31,Msg Length
+Checksum,Error detection,uint16,0x31 + Msg Length,2
+,,,,
+From Power to Control board,,,,
+Transpoder Timestamp,Time,uint32,0x00,4
+Battery Voltage ,Voltage value of battery,float32,0x04,4
+Latitude ,GPS latitude,float32,0x08,4
+Longitude ,GPS longitude,float32,0x0C,4
+Abort Command,"Command to abort, default false",bool,0x10,1
+Status Msg + Heartbeat,Length of the variable data section,byte[],0x11 + Msg Length,Msg Length
