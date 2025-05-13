@@ -16,7 +16,7 @@
 #define QUEUE_SIZE 10
 
 //Radio pin definitions
-#define RFM95_RST 20
+#define RFM95_RST 13
 #define RFM95_CS 10
 #define RFM95_INT 21
 
