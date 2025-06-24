@@ -3,6 +3,7 @@
 #include <ArduinoQueue.h>
 #include <SPI.h>
 #include <RH_RF95.h>
+#include "../include/GPSParser.h"  // Include the GPS parser header
 
 //Callsign
 #define CALLSIGN "VA2ETD"
@@ -11,6 +12,9 @@
 //Radio debugging without FC
 #define DEBUG_RX 0
 #define LOOP_TIMER 1000 
+
+// GPS
+#define GPS_UPDATE_INTERVAL 1000  // Update GPS data every 1 second
 
 //Queue
 #define QUEUE_SIZE 10     // Choose one size value - removed duplicate definition
@@ -75,15 +79,34 @@ volatile int receptionConfirm = 0;
 volatile int ignoreNextConfirm = 0;
 String FcCommandID = "X";
 
+// Create GPS parser instance
+GPSParser gps;
+
+// Timing for GPS updates
+unsigned long lastGpsUpdate = 0;
+
 void setup() {
   Serial.begin(9600);
   delay(2000);
   pinMode(LED_BUILTIN, OUTPUT);
+  
+  // Initialize GPS module
+  gps.begin(9600);
+  
   radioSetup();
   Serial.println("System init complete");
 }
 
 void loop() {
+  // Update GPS data
+  gps.update();
+  
+  // Print GPS data at regular intervals
+  if (millis() - lastGpsUpdate > GPS_UPDATE_INTERVAL) {
+    gps.printData();
+    lastGpsUpdate = millis();
+  }
+  
   if (DEBUG_RX && millis() - sendTimer > LOOP_TIMER) {
     recvCommand();
     String commandPacket = commandParser();
