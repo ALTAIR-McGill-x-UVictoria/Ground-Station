@@ -73,7 +73,7 @@ class lora(gr.top_block, Qt.QWidget):
         )
         self.osmosdr_source_0.set_time_unknown_pps(osmosdr.time_spec_t())
         self.osmosdr_source_0.set_sample_rate(samp_rate)
-        self.osmosdr_source_0.set_center_freq((433*10**6), 0)
+        self.osmosdr_source_0.set_center_freq((903*10**6), 0)
         self.osmosdr_source_0.set_freq_corr(0, 0)
         self.osmosdr_source_0.set_dc_offset_mode(0, 0)
         self.osmosdr_source_0.set_iq_balance_mode(0, 0)
@@ -83,7 +83,7 @@ class lora(gr.top_block, Qt.QWidget):
         self.osmosdr_source_0.set_bb_gain(20, 0)
         self.osmosdr_source_0.set_antenna('', 0)
         self.osmosdr_source_0.set_bandwidth(0, 0)
-        self.lora_rx_0 = lora_sdr.lora_sdr_lora_rx( bw=125000, cr=1, has_crc=True, impl_head=False, pay_len=255, samp_rate=int(samp_rate), sf=8, sync_word=[0x12], soft_decoding=True, ldro_mode=2, print_rx=[True,True])
+        self.lora_rx_0 = lora_sdr.lora_sdr_lora_rx( bw=62500, cr=1, has_crc=True, impl_head=False, pay_len=255, samp_rate=int(samp_rate), sf=7, sync_word=[0x12], soft_decoding=True, ldro_mode=2, print_rx=[True,True])
 
 
         ##################################################
