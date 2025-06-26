@@ -27,8 +27,19 @@ class TelemetryController(QObject):
     def process_packet(self, packet):
         """Process incoming telemetry packet"""
         try:
+            packet = packet.strip()
+            
+            # Check for ground station controller packet formats
+            if packet.startswith('GPS:'):
+                return self._process_gps_packet(packet[4:])  # Remove 'GPS:' prefix
+            elif packet.startswith('GS:'):
+                return self._process_ground_station_packet(packet[3:])  # Remove 'GS:' prefix
+            elif packet.startswith('FC:'):
+                return self._process_flight_computer_packet(packet[3:])  # Remove 'FC:' prefix
+            
+            # Legacy packet processing (for backward compatibility)
             # Split packet into values
-            values = packet.strip().split(',')
+            values = packet.split(',')
             
             # Check for short packet (RSSI/SNR only)
             if 2 <= len(values) < 17:
@@ -163,3 +174,106 @@ class TelemetryController(QObject):
         
         # Emit GPS update signal
         self.gps_updated.emit(self.sim_lat, self.sim_lon, self.sim_alt)
+    
+    def _process_gps_packet(self, data):
+        """Process GPS packet: lat,lon,alt,hdop,vdop,utc_unix,satellites,speed_kmh,course"""
+        try:
+            values = data.split(',')
+            if len(values) != 9:
+                self.packet_parsed.emit(False, f"Invalid GPS packet format: expected 9 values, got {len(values)}")
+                return False
+            
+            gps_data = {
+                'lat': float(values[0]),
+                'lon': float(values[1]),
+                'alt': float(values[2]),
+                'hdop': float(values[3]),
+                'vdop': float(values[4]),
+                'utc_unix': int(values[5]),
+                'satellites': int(values[6]),
+                'speed_kmh': float(values[7]),
+                'course': float(values[8])
+            }
+            
+            # Update telemetry model with ground station GPS data
+            self.telemetry_model.update_ground_station_gps(gps_data)
+            
+            self.packet_parsed.emit(True, "Ground station GPS data received")
+            return True
+            
+        except (ValueError, IndexError) as e:
+            self.packet_parsed.emit(False, f"GPS packet parse error: {str(e)}")
+            return False
+    
+    def _process_ground_station_packet(self, data):
+        """Process ground station packet: RSSI,SNR,time_since_last_packet"""
+        try:
+            values = data.split(',')
+            if len(values) != 3:
+                self.packet_parsed.emit(False, f"Invalid GS packet format: expected 3 values, got {len(values)}")
+                return False
+            
+            gs_data = {
+                'rssi': int(values[0]),
+                'snr': int(values[1]),
+                'time_since_last_packet': int(values[2])
+            }
+            
+            # Update telemetry model with ground station telemetry
+            self.telemetry_model.update_ground_station_telemetry(gs_data)
+            
+            self.packet_parsed.emit(True, "Ground station telemetry received")
+            return True
+            
+        except (ValueError, IndexError) as e:
+            self.packet_parsed.emit(False, f"GS packet parse error: {str(e)}")
+            return False
+    
+    def _process_flight_computer_packet(self, data):
+        """Process flight computer packet with 31 comma-separated values"""
+        try:
+            values = data.split(',')
+            if len(values) < 19:  # Minimum expected values
+                self.packet_parsed.emit(False, f"Invalid FC packet format: expected at least 19 values, got {len(values)}")
+                return False
+            
+            # Parse according to the FC packet structure
+            fc_data = {
+                'ack': int(values[0]) if values[0].strip() else 0,
+                'rssi': int(values[1]) if values[1].strip() else 0,
+                'snr': int(values[2]) if values[2].strip() else 0,
+                'roll': float(values[3]) if values[3].strip() else 0.0,
+                'pitch': float(values[4]) if values[4].strip() else 0.0,
+                'yaw': float(values[5]) if values[5].strip() else 0.0,
+                'pressure': float(values[6]) if values[6].strip() else 0.0,
+                'temperature': float(values[7]) if values[7].strip() else 0.0,
+                'altitude': float(values[8]) if values[8].strip() else 0.0,
+                'sd_status': bool(int(values[9])) if values[9].strip() else False,
+                'actuator_status': bool(int(values[10])) if values[10].strip() else False,
+                'photodiode1': int(values[11]) if values[11].strip() else 0,
+                'photodiode2': int(values[12]) if values[12].strip() else 0,
+                'gps_lat': float(values[13]) if values[13].strip() else 0.0,
+                'gps_lon': float(values[14]) if values[14].strip() else 0.0,
+                'gps_alt': float(values[15]) if values[15].strip() else 0.0,
+                'ground_speed': float(values[16]) if values[16].strip() else 0.0,
+                'gps_time': float(values[17]) if values[17].strip() else 0.0,
+                'gps_valid': bool(int(values[18])) if values[18].strip() else False
+            }
+            
+            # Update telemetry model with flight computer data
+            self.telemetry_model.update_flight_computer_telemetry(fc_data)
+            
+            # Emit GPS update signal if valid
+            if fc_data['gps_valid'] and fc_data['gps_lat'] != 0 and fc_data['gps_lon'] != 0:
+                self.gps_updated.emit(
+                    fc_data['gps_lat'],
+                    fc_data['gps_lon'],
+                    fc_data['gps_alt']
+                )
+            
+            self.packet_parsed.emit(True, "Flight computer telemetry received")
+            return True
+            
+        except (ValueError, IndexError) as e:
+            self.packet_parsed.emit(False, f"FC packet parse error: {str(e)}")
+            return False

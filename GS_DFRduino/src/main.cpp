@@ -75,6 +75,15 @@ volatile int receptionConfirm = 0;
 volatile int ignoreNextConfirm = 0;
 String FcCommandID = "X";
 
+// Global buffers instead of local stack allocation
+uint8_t receiveBuf[RH_RF95_MAX_MESSAGE_LEN];
+char parseBuf[RH_RF95_MAX_MESSAGE_LEN]; 
+char txBuffer[64]; // Increased size for safety
+
+// Use a single buffer for both RX and TX operations
+uint8_t radioBuf[RH_RF95_MAX_MESSAGE_LEN];
+uint8_t bufLen = 0;
+
 void setup() {
   Serial.begin(9600);
   delay(2000);
@@ -118,29 +127,33 @@ void radioSetup() {
   rf95.setSignalBandwidth(BW);
   rf95.setSpreadingFactor(SF);
   rf95.setTxPower(TX_POWER, false);
-  rf95.setCodingRate4(5);  // Set coding rate to 4/5
-  rf95.setPayloadCRC(true); // Enable CRC
+  rf95.setCodingRate4(5);
+  rf95.setPayloadCRC(true);
 }
 
 void radioRx() {
   if (rf95.available() || DEBUG_RX) {
-    uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
-    uint8_t len = sizeof(buf);
-
-    if (DEBUG_RX) {
-      String str = String(random(10000, 99999)) + ":0,-26,12,5.69,35.08,-134.84,0.07,-1,-1,-1,0.00,44330.00,0.00,111,160,1,1,1,11.1,1.4";
-      strcpy((char *)buf, str.c_str());
-    }
-
-    if (rf95.recv(buf, &len) || DEBUG_RX) {
+    // Clear buffer before receiving new data
+    memset(radioBuf, 0, sizeof(radioBuf));
+    
+    // Receive data into our single buffer
+    bufLen = sizeof(radioBuf);
+    if (rf95.recv(radioBuf, &bufLen) || DEBUG_RX) {
       digitalWrite(LED_BUILTIN, HIGH);
-
+      
       unsigned long currentTime = millis();
       unsigned long deltaT = currentTime - lastPacketTime;
       lastPacketTime = currentTime;
-
-      groundpacketParser((char*)buf, showAsRawPacket);
-
+      
+      // Ensure the buffer is null-terminated for string operations
+      if (bufLen < sizeof(radioBuf)) {
+        radioBuf[bufLen] = '\0';
+      }
+      
+      // Process received data (use radioBuf as char* for parsing)
+      groundpacketParser((char*)radioBuf, showAsRawPacket);
+      
+      // RSSI info
       if (!DEBUG_RX) {
         Serial.print("RSSI: ");
         Serial.print(rf95.lastRssi(), DEC);
@@ -148,16 +161,25 @@ void radioRx() {
         Serial.print(rf95.lastSNR(), DEC);
         Serial.print(", Delta t: ");
         Serial.println(deltaT);
+
+
       }
 
+      // Get response data
       String data = queueIsEmpty() ? "0,0.00" : dequeue();
-      // Serial.println("Sending: " + data);
-      delay(50);  // Add a 50ms delay before sending
-      rf95.send((uint8_t *)data.c_str(), data.length());
+      
+      // Copy formatted string to buffer
+      memcpy(radioBuf, data.c_str(), bufLen);
+      
+      // For debug - print what we're sending
+      Serial.print("Sending packet: ");
+      Serial.println((char*)radioBuf);
+      
+      // Send the data
+      rf95.send(radioBuf, bufLen);
       rf95.waitPacketSent();
-      Serial.print("Sent packet: ");
-      Serial.println(data);
-
+      rf95.setModeRx();
+      
       digitalWrite(LED_BUILTIN, LOW);
     }
   }
@@ -220,12 +242,33 @@ String commandParser() {
   return "";
 }
 
+// This function is destructively modifying buf with strtok()
 void groundpacketParser(char* pkt, int enableRaw) {
   if (enableRaw) {
-    Serial.println(pkt);
+    // Print only valid printable characters
+    int i = 0;
+    bool foundValidData = false;
+    
+    // First, find the valid comma-separated data
+    while (pkt[i] != '\0' && i < 200) {  // Limit to reasonable packet size
+      // Only print ASCII printable chars and basic control chars
+      char c = pkt[i];
+      if ((c >= 32 && c <= 126) || c == '\r' || c == '\n' || c == '\t' || c == ',') {
+        Serial.print(c);
+        foundValidData = true;
+      } else {
+        if (foundValidData) {
+          // Stop printing once we hit non-printable chars after valid data
+          break;
+        }
+      }
+      i++;
+    }
+    Serial.println(); // End the line
     return;
   }
 
+  // Original parsing code for non-raw format remains unchanged
   char *token = strtok(pkt, ":,");
   int index = 0;
   while (token != NULL) {

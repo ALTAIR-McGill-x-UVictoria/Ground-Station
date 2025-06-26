@@ -18,6 +18,7 @@ void GPSParser::begin(long baudRate) {
 void GPSParser::update() {
   // Process all available GPS data
   while (_gpsSerial.available() > 0) {
+    // Use TinyGPSPlus to parse NMEA sentences
     if (_gps.encode(_gpsSerial.read())) {
       // Update location data if valid
       if (_gps.location.isValid()) {

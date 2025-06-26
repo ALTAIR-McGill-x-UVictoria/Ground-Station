@@ -10,6 +10,7 @@ from views.panels.dashboard_panel import DashboardPanel
 from views.panels.plot_panel import PlotPanel
 from views.panels.command_panel import CommandPanel
 from views.panels.console_panel import ConsolePanel
+from views.panels.tracking_panel import TrackingPanel
 # from views.dialogs.settings_dialog import SettingsDialog # If you have a settings dialog
 
 class MainWindow(QMainWindow):
@@ -58,23 +59,23 @@ class MainWindow(QMainWindow):
         main_layout.setContentsMargins(5, 5, 5, 5) # Small margins
         main_layout.setSpacing(5)
 
-        # Left side: Tab widget and console (similar to gui.py structure)
+        # Left side: Tab widget (Dashboard, Plots, Map, Console)
         left_v_layout = QVBoxLayout()
         
-        # Tab widget for Dashboard, Plots, Map
+        # Tab widget for Dashboard, Plots, Map, Tracking, and Console
         self.tabs = QTabWidget()
         self.dashboard_panel = DashboardPanel(self.telemetry_model, self.connection_model, self)
         self.plot_panel = PlotPanel(self.telemetry_model, self.settings_model, self)
-        self.map_panel = MapPanel(self.map_controller, self.telemetry_model, self)
+        self.map_panel = MapPanel(self.map_controller, self.telemetry_model, self.settings_model, self)
+        self.tracking_panel = TrackingPanel(self.telemetry_model, self.map_controller, self)
+        self.console_panel = ConsolePanel(self.serial_controller, self.settings_model, self)
         
         self.tabs.addTab(self.dashboard_panel, "Dashboard")
         self.tabs.addTab(self.plot_panel, "Plots")
         self.tabs.addTab(self.map_panel, "Map")
-        left_v_layout.addWidget(self.tabs, 3) # Give more stretch factor to tabs
-
-        # Console Panel below the tabs on the left
-        self.console_panel = ConsolePanel(self.serial_controller, self.settings_model, self)
-        left_v_layout.addWidget(self.console_panel, 1) # Less stretch factor
+        self.tabs.addTab(self.tracking_panel, "Tracking")
+        self.tabs.addTab(self.console_panel, "Console")  # Console is now its own tab
+        left_v_layout.addWidget(self.tabs, 1) # Give full stretch to tabs
 
         # Right side: Command Panel
         self.command_panel = CommandPanel(
@@ -83,7 +84,6 @@ class MainWindow(QMainWindow):
         )
         # Set a fixed width for the command panel as in gui.py
         self.command_panel.setFixedWidth(self.settings_model.get('panels.command_width', 300))
-
 
         # Splitter to manage left and right sections
         splitter = QSplitter(Qt.Horizontal)

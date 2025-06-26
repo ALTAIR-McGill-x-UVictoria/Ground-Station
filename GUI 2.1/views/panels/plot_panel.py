@@ -212,7 +212,7 @@ class PlotPanel(QWidget):
 
     def update_plots_from_model(self):
         """Update plots with new data from telemetry_model."""
-        data = self.telemetry_model.get_latest_data()
+        data = self.telemetry_model.get_latest_telemetry()
         current_time_abs = time.time() - self.start_time
         
         self.time_data.append(current_time_abs)

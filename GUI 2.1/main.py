@@ -175,7 +175,7 @@ def main():
     # Controllers
     serial_controller = SerialController(connection_model)
     telemetry_controller = TelemetryController(telemetry_model)
-    map_controller = MapController(telemetry_model)
+    map_controller = MapController(telemetry_model, settings_model)
     command_controller = CommandController(serial_controller, settings_model)
     sdr_controller = SDRController(telemetry_model)
     

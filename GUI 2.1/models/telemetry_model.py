@@ -11,6 +11,7 @@ class TelemetryModel(QObject):
     altitude_updated = pyqtSignal(float)
     position_updated = pyqtSignal(float, float, float)  # lat, lon, alt
     signal_updated = pyqtSignal(int, int)  # rssi, snr
+    ground_station_gps_updated = pyqtSignal(float, float, float)  # lat, lon, alt
     
     def __init__(self):
         super().__init__()
@@ -216,16 +217,112 @@ class TelemetryModel(QObject):
             'yaw': self.yaw,
             'rssi': self.rssi,
             'snr': self.snr,
-            # Use consistent attribute naming - use gps_lat not latitude
+            # GPS data
             'gps_lat': self.gps_lat,
             'gps_lon': self.gps_lon,
             'gps_altitude': self.gps_alt,
+            'gps_alt': self.gps_alt,  # Both naming conventions
             'gps_speed': self.gps_speed,
             'gps_time': self.gps_time,
             'gps_valid': self.gps_valid,
-            # Use consistent attribute naming - use sd_status not sd_card_status
+            # Status data
             'sd_status': self.sd_status,
             'actuator_status': self.actuator_status,
+            'ack': getattr(self, 'ack', 0),
             'photodiode1': self.photodiode1 if hasattr(self, 'photodiode1') else 0,
-            'photodiode2': self.photodiode2 if hasattr(self, 'photodiode2') else 0
+            'photodiode2': self.photodiode2 if hasattr(self, 'photodiode2') else 0,
+            # Alternative naming for backward compatibility
+            'fRoll': self.roll,
+            'fPitch': self.pitch,
+            'fYaw': self.yaw
         }
+    
+    def get_latest_data(self):
+        """Alias for get_latest_telemetry for backward compatibility"""
+        return self.get_latest_telemetry()
+    
+    def update_ground_station_gps(self, gps_data):
+        """Update ground station GPS data"""
+        # Store ground station GPS data separately
+        self.gs_gps_lat = gps_data['lat']
+        self.gs_gps_lon = gps_data['lon']
+        self.gs_gps_alt = gps_data['alt']
+        self.gs_gps_hdop = gps_data['hdop']
+        self.gs_gps_vdop = gps_data['vdop']
+        self.gs_gps_utc_unix = gps_data['utc_unix']
+        self.gs_gps_satellites = gps_data['satellites']
+        self.gs_gps_speed_kmh = gps_data['speed_kmh']
+        self.gs_gps_course = gps_data['course']
+        
+        print(f"Ground station GPS updated: {gps_data['lat']:.6f}, {gps_data['lon']:.6f}, alt={gps_data['alt']:.1f}m")
+        
+        # Emit signal for ground station position update (separate from vehicle position)
+        self.ground_station_gps_updated.emit(gps_data['lat'], gps_data['lon'], gps_data['alt'])
+        self.data_updated.emit()
+    
+    def update_ground_station_telemetry(self, gs_data):
+        """Update ground station telemetry data"""
+        self.gs_rssi = gs_data['rssi']
+        self.gs_snr = gs_data['snr']
+        self.gs_time_since_last_packet = gs_data['time_since_last_packet']
+        
+        # print(f"Ground station telemetry updated: RSSI={gs_data['rssi']}, SNR={gs_data['snr']}, time_since_last={gs_data['time_since_last_packet']}")
+        
+        # Update signal strength data with ground station values
+        self.update_signal(gs_data['rssi'], gs_data['snr'])
+    
+    def update_flight_computer_telemetry(self, fc_data):
+        """Update flight computer telemetry data"""
+        # This is similar to the existing update_telemetry but specifically for FC data
+        current_time = time.time() - self.start_time
+        
+        # Update current values
+        self.ack = fc_data['ack']
+        self.rssi = fc_data['rssi']
+        self.snr = fc_data['snr']
+        self.roll = fc_data['roll']
+        self.pitch = fc_data['pitch']
+        self.yaw = fc_data['yaw']
+        self.pressure = fc_data['pressure']
+        self.temperature = fc_data['temperature']
+        self.altitude = fc_data['altitude']
+        self.sd_status = fc_data['sd_status']
+        self.actuator_status = fc_data['actuator_status']
+        self.photodiode1 = fc_data['photodiode1']
+        self.photodiode2 = fc_data['photodiode2']
+        self.gps_lat = fc_data['gps_lat']
+        self.gps_lon = fc_data['gps_lon']
+        self.gps_alt = fc_data['gps_alt']
+        self.ground_speed = fc_data['ground_speed']
+        self.gps_time = fc_data['gps_time']
+        self.gps_valid = fc_data['gps_valid']
+        
+        # Calculate vertical speed
+        self.calculate_vertical_speed(fc_data['altitude'])
+        
+        # Add to arrays
+        self.telemetry_time_data.append(current_time)
+        self.altitude_data.append(self.altitude)
+        self.temperature_data.append(self.temperature)
+        self.pressure_data.append(self.pressure)
+        self.ground_speed_data.append(self.ground_speed)
+        self.vertical_speed_data.append(self.vertical_speed)
+        
+        # Limit array size
+        if len(self.telemetry_time_data) > self.max_data_points:
+            self.telemetry_time_data = self.telemetry_time_data[-self.max_data_points:]
+            self.altitude_data = self.altitude_data[-self.max_data_points:]
+            self.temperature_data = self.temperature_data[-self.max_data_points:]
+            self.pressure_data = self.pressure_data[-self.max_data_points:]
+            self.ground_speed_data = self.ground_speed_data[-self.max_data_points:]
+            self.vertical_speed_data = self.vertical_speed_data[-self.max_data_points:]
+        
+        # Emit signals
+        self.data_updated.emit()
+        self.altitude_updated.emit(self.altitude)
+        self.signal_updated.emit(self.rssi, self.snr)
+        
+        if self.gps_valid and self.gps_lat != 0 and self.gps_lon != 0:
+            self.position_updated.emit(self.gps_lat, self.gps_lon, self.gps_alt)
+        
+        print(f"Flight computer telemetry updated: alt={self.altitude}m, temp={self.temperature}°C, GPS valid={self.gps_valid}")

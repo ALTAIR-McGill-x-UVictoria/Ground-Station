@@ -3,7 +3,7 @@
 
 #include <Arduino.h>
 #include <SoftwareSerial.h>
-#include <TinyGPS++.h>
+#include <TinyGPSPlus.h>  // Changed from TinyGPS++.h to TinyGPSPlus.h
 
 // GPS pin definitions
 #define GPS_RX 4  // Connect to TX of GPS module
@@ -27,7 +27,7 @@ public:
   
 private:
   SoftwareSerial _gpsSerial;
-  TinyGPSPlus _gps;
+  TinyGPSPlus _gps;  // Using TinyGPSPlus class
   
   float _latitude;
   float _longitude;

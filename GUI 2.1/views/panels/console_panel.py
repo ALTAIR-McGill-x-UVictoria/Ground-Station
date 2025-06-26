@@ -37,6 +37,24 @@ class ConsolePanel(QWidget):
         """Set up the console panel UI based on gui.py's raw data section."""
         layout = QVBoxLayout(self)
         
+        # Console header with title and status
+        header_layout = QHBoxLayout()
+        console_title = QLabel("Serial Console Monitor")
+        console_title.setStyleSheet("font-size: 12pt; font-weight: bold; color: #ffffff;")
+        header_layout.addWidget(console_title)
+        
+        header_layout.addStretch()
+        
+        # Connection status indicator
+        self.connection_status = QLabel("Not Connected")
+        self.connection_status.setStyleSheet(
+            "background-color: #ff3333; color: white; padding: 4px 8px; "
+            "border-radius: 4px; font-weight: bold; font-size: 9pt;"
+        )
+        header_layout.addWidget(self.connection_status)
+        
+        layout.addLayout(header_layout)
+        
         # Raw data display (QTextEdit)
         self.data_display = QTextEdit()
         self.data_display.setReadOnly(True)
@@ -46,27 +64,67 @@ class ConsolePanel(QWidget):
                 color: #00ff00; /* Green text like in gui.py */
                 font-family: 'Courier New', monospace;
                 font-size: 10pt;
+                border: 1px solid #3a3a3a;
+                border-radius: 4px;
             }
         """)
         layout.addWidget(self.data_display, 1) # Make it expand
         
-        # Button layout (Clear, Start/Stop Logging)
-        button_layout = QHBoxLayout()
+        # Control section
+        controls_group = QGroupBox("Console Controls")
+        controls_group.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                border: 2px solid #3a3a3a;
+                border-radius: 8px;
+                margin-top: 1ex;
+                color: #00ff00;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top center;
+                padding: 0 5px;
+            }
+        """)
+        controls_layout = QHBoxLayout(controls_group)
         
-        self.clear_button = QPushButton("Clear")
+        # Button layout (Clear, Start/Stop Logging)
+        self.clear_button = QPushButton("Clear Console")
         self.clear_button.clicked.connect(self.clear_data_display)
-        button_layout.addWidget(self.clear_button)
+        self.clear_button.setToolTip("Clear all console output")
+        controls_layout.addWidget(self.clear_button)
         
         self.log_button = QPushButton("Start Logging")
         self.log_button.clicked.connect(self.toggle_logging)
-        button_layout.addWidget(self.log_button)
+        self.log_button.setToolTip("Start/stop logging console output to file")
+        controls_layout.addWidget(self.log_button)
 
-        # Optional: Save console button (good feature to keep)
+        # Save console button
         save_button = QPushButton("Save Console")
         save_button.clicked.connect(self.save_console_contents)
-        button_layout.addWidget(save_button)
+        save_button.setToolTip("Save current console contents to file")
+        controls_layout.addWidget(save_button)
         
-        layout.addLayout(button_layout)
+        # Auto-scroll checkbox
+        self.auto_scroll_checkbox = QCheckBox("Auto-scroll")
+        self.auto_scroll_checkbox.setChecked(True)
+        self.auto_scroll_checkbox.setToolTip("Automatically scroll to bottom when new data arrives")
+        controls_layout.addWidget(self.auto_scroll_checkbox)
+        
+        # Max lines setting
+        controls_layout.addWidget(QLabel("Max lines:"))
+        self.max_lines_combo = QComboBox()
+        self.max_lines_combo.addItems(["100", "200", "500", "1000", "2000"])
+        self.max_lines_combo.setCurrentText(str(self.max_console_lines))
+        self.max_lines_combo.currentTextChanged.connect(self.update_max_lines)
+        self.max_lines_combo.setToolTip("Maximum number of lines to keep in console")
+        controls_layout.addWidget(self.max_lines_combo)
+        
+        layout.addWidget(controls_group)
+        
+        # Connect to serial controller signals for connection status
+        if hasattr(self.serial_controller, 'connection_changed'):
+            self.serial_controller.connection_changed.connect(self.update_connection_status)
 
     @pyqtSlot(str)
     def display_raw_data(self, data_line):
@@ -76,6 +134,7 @@ class ConsolePanel(QWidget):
         
         self.data_display.append(formatted_line)
         self.trim_console_lines()
+        self.auto_scroll_to_bottom()
 
         if self.is_logging and self.log_file:
             try:
@@ -85,6 +144,7 @@ class ConsolePanel(QWidget):
                 error_msg = f"[{timestamp}] Error writing to log: {str(e)}"
                 self.data_display.append(error_msg)
                 self.trim_console_lines()
+                self.auto_scroll_to_bottom()
                 self.stop_logging_on_error() # Stop logging on error
 
     def stop_logging_on_error(self):
@@ -99,6 +159,7 @@ class ConsolePanel(QWidget):
         self.data_display.append(f"[{timestamp}] ERROR: {error_message}")
         self.data_display.setTextColor(QColor("#00ff00")) # Reset to default color
         self.trim_console_lines()
+        self.auto_scroll_to_bottom()
 
     def log_to_console(self, message, color=None):
         """Generic method to log messages to the console display."""
@@ -111,6 +172,7 @@ class ConsolePanel(QWidget):
         if color: # Reset to default color if a specific color was used
             self.data_display.setTextColor(QColor("#00ff00"))
         self.trim_console_lines()
+        self.auto_scroll_to_bottom()
 
     def clear_data_display(self):
         self.data_display.clear()
@@ -199,3 +261,35 @@ class ConsolePanel(QWidget):
         if self.is_logging and self.log_file:
             self.toggle_logging() # This will handle closing the file
         super().closeEvent(event)
+
+    def update_connection_status(self, connected, port_name=""):
+        """Update the connection status indicator."""
+        if connected:
+            self.connection_status.setText(f"Connected: {port_name}")
+            self.connection_status.setStyleSheet(
+                "background-color: #00cc00; color: white; padding: 4px 8px; "
+                "border-radius: 4px; font-weight: bold; font-size: 9pt;"
+            )
+        else:
+            self.connection_status.setText("Not Connected")
+            self.connection_status.setStyleSheet(
+                "background-color: #ff3333; color: white; padding: 4px 8px; "
+                "border-radius: 4px; font-weight: bold; font-size: 9pt;"
+            )
+
+    def update_max_lines(self, new_max_str):
+        """Update the maximum number of lines to keep in console."""
+        try:
+            new_max = int(new_max_str)
+            self.max_console_lines = new_max
+            self.settings_model.set('console.max_lines', new_max)
+            self.trim_console_lines()  # Apply new limit immediately
+        except ValueError:
+            pass  # Ignore invalid values
+
+    def auto_scroll_to_bottom(self):
+        """Automatically scroll to bottom if auto-scroll is enabled."""
+        if self.auto_scroll_checkbox.isChecked():
+            cursor = self.data_display.textCursor()
+            cursor.movePosition(QTextCursor.End)
+            self.data_display.setTextCursor(cursor)

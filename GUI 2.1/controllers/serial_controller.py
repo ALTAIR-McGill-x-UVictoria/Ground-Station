@@ -90,14 +90,19 @@ class SerialController(QObject):
                         # Emit raw data for console
                         self.raw_data_received.emit(decoded_line)
                         
+                        # Skip processing certain lines that are not telemetry
+                        if decoded_line.startswith('Sending packet:'):
+                            continue  # Skip command acknowledgments
+                        
                         # Basic check for printable characters and comma (from gui.py)
                         # This is a heuristic; more robust parsing should be in TelemetryController
                         is_potentially_valid_packet = True
                         # if any(ord(c) < 32 or ord(c) > 126 for c in decoded_line if c not in ['\r', '\n']):
                         #    is_potentially_valid_packet = False # Contains non-printable
                         
-                        if ',' not in decoded_line:
-                            is_potentially_valid_packet = False # Not CSV
+                        # Check for known packet formats or legacy comma-separated format
+                        if not (decoded_line.startswith(('GPS:', 'GS:', 'FC:')) or ',' in decoded_line):
+                            is_potentially_valid_packet = False # Not known format
 
                         if is_potentially_valid_packet:
                             # Update statistics in model

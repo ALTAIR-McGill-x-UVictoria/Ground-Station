@@ -6,9 +6,9 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtWebEngineWidgets import QWebEngineView
 from PyQt5.QtWebChannel import QWebChannel
 from PyQt5.QtCore import QObject, pyqtSlot, QUrl, Qt, QTimer, pyqtSignal
-import webbrowser # For Open in Google Maps
+import webbrowser  # For Open in Google Maps
 
-# MAP_HTML from gui.py
+# Working MAP_HTML from gui.py - proven to work
 MAP_HTML = """
 <!DOCTYPE html>
 <html>
@@ -17,74 +17,64 @@ MAP_HTML = """
     <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
     <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
     <style>
-        #map { height: 100vh; width: 100%; margin: 0; padding: 0; }
-        body { margin: 0; padding: 0; }
+        #map { height: 100vh; width: 100%; }
     </style>
 </head>
 <body>
     <div id="map"></div>
     <script>
-        var map = L.map('map').setView([0, 0], 2); // Default view
+        var map = L.map('map').setView([45.5017, -73.5673], 13);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            attribution: '© OpenStreetMap contributors'
         }).addTo(map);
         
+        // Create custom icons for different markers
         var vehicleIcon = L.icon({
             iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
             shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-            iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
+            iconSize: [25, 41],
+            iconAnchor: [12, 41],
+            popupAnchor: [1, -34],
+            shadowSize: [41, 41]
         });
         
         var userIcon = L.icon({
             iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
             shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-            iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
+            iconSize: [25, 41],
+            iconAnchor: [12, 41],
+            popupAnchor: [1, -34],
+            shadowSize: [41, 41]
         });
         
-        var vehicleMarker = L.marker([0, 0], {icon: vehicleIcon}).addTo(map).bindPopup("Vehicle");
-        var userMarker = L.marker([0,0], {icon: userIcon}).addTo(map).bindPopup("Ground Station");
-        var pathLine = L.polyline([], { color: 'red', weight: 3, opacity: 0.7 }).addTo(map);
+        var marker = L.marker([0, 0], {icon: vehicleIcon}).addTo(map);
+        var userMarker = L.marker([0, 0], {icon: userIcon}).addTo(map);
+        var pathLine = L.polyline([], {
+            color: 'red',
+            weight: 3,
+            opacity: 0.7
+        }).addTo(map);
         
-        var followVehicleMarker = true;
+        var followMarker = true;
         var coordinates = [];
-        var jsPyComm = null; // For QWebChannel
-
-        // Initialize QWebChannel
-        document.addEventListener('DOMContentLoaded', function () {
-            if (typeof QWebChannel !== 'undefined') {
-                new QWebChannel(qt.webChannelTransport, function(channel) {
-                    jsPyComm = channel.objects.js_py_handler;
-                    if (jsPyComm) {
-                        jsPyComm.jsMapReady(); // Notify Python that map is ready
-                    } else {
-                        console.error("js_py_handler not found in QWebChannel objects.");
-                    }
-                });
-            } else {
-                console.error("QWebChannel is not defined. Ensure qwebchannel.js is loaded.");
-            }
-        });
-
-        function updateVehicleMarker(lat, lon, alt) {
-            var newLatLng = L.latLng(lat, lon);
-            vehicleMarker.setLatLng(newLatLng);
-            vehicleMarker.setPopupContent("Vehicle<br>Lat: " + lat.toFixed(6) + "<br>Lon: " + lon.toFixed(6) + "<br>Alt: " + alt.toFixed(1) + "m");
-            coordinates.push(newLatLng);
+        
+        function updateMarker(lat, lon) {
+            marker.setLatLng([lat, lon]);
+            coordinates.push([lat, lon]);
             pathLine.setLatLngs(coordinates);
             
-            if (followVehicleMarker) {
-                map.setView(newLatLng);
+            if (followMarker) {
+                map.setView([lat, lon]);
             }
         }
         
         function updateUserMarker(lat, lon) {
-            var newLatLng = L.latLng(lat, lon);
-            userMarker.setLatLng(newLatLng);
-            userMarker.setPopupContent("Ground Station<br>Lat: " + lat.toFixed(6) + "<br>Lon: " + lon.toFixed(6)).openPopup();
+            userMarker.setLatLng([lat, lon]);
+            userMarker.bindPopup('Ground Station').openPopup();
         }
         
-        function setFollowVehicle(follow) {
-            followVehicleMarker = follow;
+        function setFollowMarker(follow) {
+            followMarker = follow;
         }
         
         function clearPath() {
@@ -92,73 +82,102 @@ MAP_HTML = """
             pathLine.setLatLngs([]);
         }
 
-        function centerMap(lat, lon, zoom) {
-            map.setView([lat, lon], zoom);
+        // Add HTML5 Geolocation support
+        function getCurrentPosition() {
+            if ("geolocation" in navigator) {
+                navigator.geolocation.getCurrentPosition(function(position) {
+                    var lat = position.coords.latitude;
+                    var lon = position.coords.longitude;
+                    // Call back to Python with the coordinates
+                    new QWebChannel(qt.webChannelTransport, function(channel) {
+                        if (channel.objects.handler) {
+                            channel.objects.handler.onLocationReceived(lat, lon);
+                        }
+                    });
+                }, function(error) {
+                    console.error("Geolocation error:", error);
+                    // Notify Python of the error
+                    new QWebChannel(qt.webChannelTransport, function(channel) {
+                        if (channel.objects.handler) {
+                            channel.objects.handler.onLocationError(error.message);
+                        }
+                    });
+                }, {
+                    enableHighAccuracy: true,
+                    timeout: 5000,
+                    maximumAge: 0
+                });
+            }
         }
+        
+        // Initialize QWebChannel
+        new QWebChannel(qt.webChannelTransport, function(channel) {
+            window.handler = channel.objects.handler;
+        });
     </script>
 </body>
 </html>
 """
 
-class JsPyHandler(QObject): # Renamed from LocationHandler for clarity
-    """Handler for JavaScript-Python communication"""
-    # Python to JavaScript signals (if needed)
-    # pySignalUpdateVehicleMarker = pyqtSignal(float, float, float) 
-    # pySignalUpdateUserMarker = pyqtSignal(float, float)
-
-    # JavaScript to Python slots
-    jsMapReady = pyqtSignal()
-    jsUserLocationReceived = pyqtSignal(float, float)
-    jsUserLocationError = pyqtSignal(str)
+class LocationHandler(QObject):
+    """Handler for JavaScript-Python communication - based on working gui.py implementation"""
     
     def __init__(self, map_panel_ref):
         super().__init__()
-        self.map_panel = map_panel_ref # Store a reference to MapPanel
-
-    @pyqtSlot()
-    def jsMapReadySlot(self): # Slot to connect to jsMapReady signal
-        self.map_panel.on_map_ready()
-
+        self.map_panel = map_panel_ref
+    
     @pyqtSlot(float, float)
-    def jsUserLocationReceivedSlot(self, lat, lon):
-        self.map_panel.on_user_location_received(lat, lon)
-
+    def onLocationReceived(self, lat, lon):
+        """Callback when HTML5 geolocation succeeds"""
+        print(f"LocationHandler: HTML5 geolocation received: {lat:.6f}, {lon:.6f}")
+        self.map_panel.user_lat = lat
+        self.map_panel.user_lon = lon
+        self.map_panel.init_user_marker()
+        # Notify the map controller
+        self.map_panel.map_controller.set_user_location(lat, lon)
+    
     @pyqtSlot(str)
-    def jsUserLocationErrorSlot(self, error_message):
-        self.map_panel.on_user_location_error(error_message)
+    def onLocationError(self, error):
+        """Callback when HTML5 geolocation fails"""
+        print(f"LocationHandler: HTML5 geolocation error: {error}")
+        # Fall back to IP geolocation
+        self.map_panel.map_controller.detect_user_location()
 
 
 class MapPanel(QWidget):
-    """Panel for displaying the map, based on gui.py"""
+    """Panel for displaying the map, based on working gui.py implementation"""
     
     def __init__(self, map_controller, telemetry_model, settings_model, parent=None):
         super().__init__(parent)
         self.map_controller = map_controller
         self.telemetry_model = telemetry_model
-        self.settings_model = settings_model # Store settings_model
+        self.settings_model = settings_model
         
+        # Initialize location variables
         self.user_lat = None
         self.user_lon = None
         self.last_gps_lat = None
         self.last_gps_lon = None
-
+        
         self.setup_ui()
-
+        
         # Connect signals from models/controllers
-        self.telemetry_model.position_updated.connect(self.update_vehicle_on_map)
-        self.map_controller.user_location_changed.connect(self.update_user_on_map)
-        self.map_view.loadFinished.connect(self.initialize_map_interaction)
-
+        self.telemetry_model.position_updated.connect(self.update_vehicle_marker)
+        self.map_controller.user_location_changed.connect(self.update_user_marker)
 
     def setup_ui(self):
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0,0,0,0) # Remove margins for map to fill
+        layout.setContentsMargins(0, 0, 0, 0)
         
-        # Map controls (similar to gui.py)
+        # Map controls
         map_controls_layout = QHBoxLayout()
         
         self.gps_label = QLabel("GPS: No Fix")
-        self.gps_label.setStyleSheet("background-color: #2a2a2a; color: #ff6b6b; padding: 8px 12px; border: 1px solid #3a3a3a; border-radius: 6px; font-family: 'Courier New'; font-size: 10pt; font-weight: bold; min-width: 280px;")
+        self.gps_label.setStyleSheet(
+            "background-color: #2a2a2a; color: #ff6b6b; padding: 8px 12px; "
+            "border: 1px solid #3a3a3a; border-radius: 6px; font-family: 'Courier New'; "
+            "font-size: 10pt; font-weight: bold; min-width: 280px;"
+        )
         map_controls_layout.addWidget(self.gps_label)
         map_controls_layout.addStretch()
         
@@ -167,9 +186,15 @@ class MapPanel(QWidget):
         self.follow_marker_checkbox.stateChanged.connect(self.toggle_map_follow)
         map_controls_layout.addWidget(self.follow_marker_checkbox)
         
-        detect_location_button = QPushButton("Detect My Location")
-        detect_location_button.clicked.connect(self.map_controller.detect_user_location) # Call controller
+        # Use HTML5 geolocation button
+        detect_location_button = QPushButton("Detect My Location (HTML5)")
+        detect_location_button.clicked.connect(self.detect_html5_location)
         map_controls_layout.addWidget(detect_location_button)
+        
+        # IP geolocation fallback button
+        ip_location_button = QPushButton("Detect via IP")
+        ip_location_button.clicked.connect(self.map_controller.detect_user_location)
+        map_controls_layout.addWidget(ip_location_button)
 
         open_gmaps_button = QPushButton("Open in Google Maps")
         open_gmaps_button.clicked.connect(self.open_vehicle_in_google_maps)
@@ -180,68 +205,96 @@ class MapPanel(QWidget):
         # Web view for map
         self.map_view = QWebEngineView()
         layout.addWidget(self.map_view)
+        
+        # Initialize map after UI is set up
+        self.initialize_map()
 
-    def initialize_map_interaction(self, success):
-        if (success):
-            self.js_py_handler = JsPyHandler(self)
-            self.js_py_handler.jsMapReady.connect(self.js_py_handler.jsMapReadySlot) # Connect signal to slot
-            # self.js_py_handler.jsUserLocationReceived.connect(self.js_py_handler.jsUserLocationReceivedSlot)
-            # self.js_py_handler.jsUserLocationError.connect(self.js_py_handler.jsUserLocationErrorSlot)
-
-
-            self.web_channel = QWebChannel(self.map_view.page())
-            self.map_view.page().setWebChannel(self.web_channel)
-            self.web_channel.registerObject("js_py_handler", self.js_py_handler)
+    def initialize_map(self):
+        """Initialize the map with WebChannel - based on working gui.py implementation"""
+        try:
+            # Set up web channel for JavaScript communication (like gui.py)
+            self.channel = QWebChannel()
+            self.location_handler = LocationHandler(self)
+            self.channel.registerObject("handler", self.location_handler)
+            self.map_view.page().setWebChannel(self.channel)
             
-            # Load the HTML after channel is set up
-            self.map_view.setHtml(MAP_HTML, QUrl("qrc:/")) # Base URL for qrc if using resources
-            print("MapPanel: Map HTML loaded and WebChannel set up.")
-        else:
-            print("MapPanel: Map page failed to load.")
+            # Load the HTML
+            self.map_view.setHtml(MAP_HTML)
+            print("MapPanel: Map HTML loaded with WebChannel")
+            
+        except Exception as e:
+            print(f"MapPanel: Error initializing map: {e}")
 
-    def on_map_ready(self):
-        print("MapPanel: Map JavaScript reported ready.")
-        # Now safe to call JS functions if needed, e.g., initial user location
-        self.map_controller.detect_user_location() 
+    def detect_html5_location(self):
+        """Trigger HTML5 geolocation"""
+        js_code = "getCurrentPosition();"
+        self.map_view.page().runJavaScript(js_code)
+        print("MapPanel: HTML5 geolocation requested")
 
+    def init_user_marker(self):
+        """Initialize the user's location marker on the map - from gui.py"""
+        if self.user_lat is not None and self.user_lon is not None:
+            try:
+                print(f"MapPanel: Setting user marker at: {self.user_lat:.6f}, {self.user_lon:.6f}")
+                
+                # Use runJavaScript as in gui.py
+                js_code = f"updateUserMarker({self.user_lat}, {self.user_lon});"
+                self.map_view.page().runJavaScript(js_code)
+                
+                # Center map on user's location initially
+                js_code = f"map.setView([{self.user_lat}, {self.user_lon}], 13);"
+                self.map_view.page().runJavaScript(js_code)
+                
+            except Exception as e:
+                print(f"MapPanel: Error setting user marker: {e}")
 
-    def update_vehicle_on_map(self, lat, lon, alt):
-        if lat != 0 and lon != 0: # Valid coordinates
+    def update_vehicle_marker(self, lat, lon, alt):
+        """Update vehicle marker position - based on gui.py update_map_marker"""
+        if lat != 0 and lon != 0:  # Only update if we have valid coordinates
             self.last_gps_lat, self.last_gps_lon = lat, lon
-            self.map_view.page().runJavaScript(f"updateVehicleMarker({lat}, {lon}, {alt});")
             
-            lat_dir = "N" if lat >= 0 else "S"
-            lon_dir = "E" if lon >= 0 else "W"
-            self.gps_label.setText(f"Vehicle: {abs(lat):.5f}°{lat_dir}, {abs(lon):.5f}°{lon_dir} | Alt: {alt:.1f}m")
-            self.gps_label.setStyleSheet("background-color: #2a2a2a; color: #00ff00; padding: 8px 12px; border: 1px solid #3a3a3a; border-radius: 6px; font-family: 'Courier New'; font-size: 10pt; font-weight: bold; min-width: 280px;")
-
+            try:
+                # Update map marker using the working JavaScript function
+                js_code = f"updateMarker({lat}, {lon});"
+                self.map_view.page().runJavaScript(js_code)
+                
+                # Update GPS label
+                lat_direction = "N" if lat >= 0 else "S"
+                lon_direction = "E" if lon >= 0 else "W"
+                self.gps_label.setText(
+                    f"Vehicle: {abs(lat):.5f}°{lat_direction}, {abs(lon):.5f}°{lon_direction} | Alt: {alt:.1f}m"
+                )
+                self.gps_label.setStyleSheet(
+                    "background-color: #2a2a2a; color: #00ff00; padding: 8px 12px; "
+                    "border: 1px solid #3a3a3a; border-radius: 6px; font-family: 'Courier New'; "
+                    "font-size: 10pt; font-weight: bold; min-width: 280px;"
+                )
+                
+            except Exception as e:
+                print(f"MapPanel: Error updating vehicle marker: {e}")
         else:
             self.gps_label.setText("GPS: No Fix / Invalid Data")
-            self.gps_label.setStyleSheet("background-color: #2a2a2a; color: #ff6b6b; padding: 8px 12px; border: 1px solid #3a3a3a; border-radius: 6px; font-family: 'Courier New'; font-size: 10pt; font-weight: bold; min-width: 280px;")
+            self.gps_label.setStyleSheet(
+                "background-color: #2a2a2a; color: #ff6b6b; padding: 8px 12px; "
+                "border: 1px solid #3a3a3a; border-radius: 6px; font-family: 'Courier New'; "
+                "font-size: 10pt; font-weight: bold; min-width: 280px;"
+            )
 
-
-    def update_user_on_map(self, lat, lon):
+    def update_user_marker(self, lat, lon):
+        """Update user marker from map controller"""
         self.user_lat, self.user_lon = lat, lon
-        self.map_view.page().runJavaScript(f"updateUserMarker({lat}, {lon});")
-        # Optionally center map on user if it's the first time
-        # self.map_view.page().runJavaScript(f"centerMap({lat}, {lon}, 13);")
-
+        self.init_user_marker()
 
     def toggle_map_follow(self, state):
+        """Toggle map following mode"""
         follow = "true" if state == Qt.Checked else "false"
-        self.map_view.page().runJavaScript(f"setFollowVehicle({follow});")
+        js_code = f"setFollowMarker({follow});"
+        self.map_view.page().runJavaScript(js_code)
 
     def open_vehicle_in_google_maps(self):
+        """Open vehicle location in Google Maps"""
         if self.last_gps_lat is not None and self.last_gps_lon is not None:
             url = f"https://www.google.com/maps?q={self.last_gps_lat},{self.last_gps_lon}"
             webbrowser.open(url)
         else:
             print("MapPanel: No vehicle GPS data to open in Google Maps.")
-
-    # Slots for JsPyHandler signals (if JsPyHandler emits signals to be caught by MapPanel)
-    def on_user_location_received(self, lat, lon):
-        self.map_controller.set_user_location(lat,lon)
-
-    def on_user_location_error(self, error_message):
-        print(f"MapPanel: User geolocation error: {error_message}")
-        # Fallback or notify user

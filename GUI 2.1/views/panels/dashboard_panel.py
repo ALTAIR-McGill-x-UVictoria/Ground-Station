@@ -116,7 +116,7 @@ class DashboardPanel(QWidget):
         
         self.ground_speed_dial = SpeedDialWidget("Ground Speed", "m/s", max_value=50)
         self.ground_speed_dial.setMinimumSize(150,150)
-        self.vertical_speed_dial = SpeedDialWidget("Vertical Speed", "m/s", max_value=20, min_value=-20) # Assuming SpeedDial can handle min_value
+        self.vertical_speed_dial = SpeedDialWidget("Vertical Speed", "m/s", max_value=20)
         self.vertical_speed_dial.setMinimumSize(150,150)
         
         speed_dials_h_layout.addWidget(self.ground_speed_dial, stretch=1)
@@ -251,7 +251,7 @@ class DashboardPanel(QWidget):
 
     def update_indicators_from_model(self):
         """Update dashboard indicators with data from telemetry_model."""
-        data = self.telemetry_model.get_latest_data()
+        data = self.telemetry_model.get_latest_telemetry()
 
         # Navigation
         if data.get('gps_valid') and data.get('gps_lat') != 0 and data.get('gps_lon') != 0:

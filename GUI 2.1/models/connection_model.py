@@ -37,3 +37,11 @@ class ConnectionModel(QObject):
         self.bytes_received += bytes_count
         self.packets_received += 1
         self.last_packet_time = now
+    
+    def get_port(self):
+        """Get the current connected port"""
+        return self.port
+    
+    def is_connected(self):
+        """Check if currently connected"""
+        return self.connected

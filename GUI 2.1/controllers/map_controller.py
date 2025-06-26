@@ -24,33 +24,62 @@ class MapController(QObject):
         
         # Connect to model signals
         self.telemetry_model.position_updated.connect(self.handle_vehicle_position_update)
+        self.telemetry_model.ground_station_gps_updated.connect(self.handle_ground_station_gps_update)
     
     def detect_user_location(self):
         """Detect user's location using IP geolocation (from gui.py)."""
         try:
-            # Consider using a timeout for the request
+            # Try multiple geolocation services
+            services = [
+                'http://ip-api.com/json/',
+                'https://ipinfo.io/json',
+                'https://ipapi.co/json/'
+            ]
+            
             timeout_seconds = self.settings_model.get('map.geolocation_timeout', 5)
-            response = requests.get('https://ipapi.co/json/', timeout=timeout_seconds)
-            response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
-            data = response.json()
             
-            lat = float(data.get('latitude', self.user_lat))
-            lon = float(data.get('longitude', self.user_lon))
+            for service_url in services:
+                try:
+                    response = requests.get(service_url, timeout=timeout_seconds)
+                    response.raise_for_status()
+                    data = response.json()
+                    
+                    # Parse response based on service
+                    if 'ip-api.com' in service_url:
+                        lat = float(data.get('lat', self.user_lat))
+                        lon = float(data.get('lon', self.user_lon))
+                    elif 'ipinfo.io' in service_url:
+                        loc = data.get('loc', '').split(',')
+                        if len(loc) == 2:
+                            lat = float(loc[0])
+                            lon = float(loc[1])
+                        else:
+                            continue
+                    else:  # ipapi.co
+                        lat = float(data.get('latitude', self.user_lat))
+                        lon = float(data.get('longitude', self.user_lon))
+                    
+                    if lat != self.user_lat or lon != self.user_lon:
+                        self.user_lat = lat
+                        self.user_lon = lon
+                        self.user_location_changed.emit(self.user_lat, self.user_lon)
+                        print(f"MapController: User location detected via {service_url}: {self.user_lat}, {self.user_lon}")
+                    return True
+                    
+                except requests.exceptions.RequestException as e:
+                    print(f"MapController: {service_url} failed: {e}")
+                    continue
+                except (ValueError, KeyError) as e:
+                    print(f"MapController: Error parsing response from {service_url}: {e}")
+                    continue
             
-            if lat != self.user_lat or lon != self.user_lon : # Only update if changed
-                self.user_lat = lat
-                self.user_lon = lon
-                self.user_location_changed.emit(self.user_lat, self.user_lon)
-                print(f"MapController: User location detected via IP: {self.user_lat}, {self.user_lon}")
-            return True
-            
-        except requests.exceptions.RequestException as e:
-            print(f"MapController: IP geolocation failed: {e}. Using default/previous location.")
-            # Emit current (possibly default) location so map can initialize with something
+            # If all services failed, emit current location anyway
+            print("MapController: All geolocation services failed. Using default location.")
             self.user_location_changed.emit(self.user_lat, self.user_lon)
             return False
-        except (ValueError, KeyError) as e:
-            print(f"MapController: Error parsing geolocation response: {e}. Using default/previous location.")
+            
+        except Exception as e:
+            print(f"MapController: Unexpected error in detect_user_location: {e}")
             self.user_location_changed.emit(self.user_lat, self.user_lon)
             return False
 
@@ -88,6 +117,25 @@ class MapController(QObject):
         # Store current position for next calculation
         self.last_vehicle_lat = vehicle_lat
         self.last_vehicle_lon = vehicle_lon
+
+    def handle_ground_station_gps_update(self, gs_lat, gs_lon, gs_alt):
+        """Called when ground station GPS data is received from GS packets."""
+        print(f"MapController: Ground station GPS received: {gs_lat:.6f}, {gs_lon:.6f}, alt={gs_alt:.1f}m")
+        
+        # Update the user location with the ground station's actual GPS position
+        if gs_lat != 0 and gs_lon != 0:  # Valid GPS coordinates
+            if self.user_lat != gs_lat or self.user_lon != gs_lon:
+                self.user_lat = gs_lat
+                self.user_lon = gs_lon
+                
+                # Use QTimer to delay the emission slightly to ensure map is ready
+                from PyQt5.QtCore import QTimer
+                QTimer.singleShot(100, lambda: self.user_location_changed.emit(gs_lat, gs_lon))
+                print(f"MapController: Ground station location updated from GPS data: {gs_lat:.6f}, {gs_lon:.6f}")
+                
+                # Recalculate bearings if vehicle position is known
+                if self.last_vehicle_lat is not None and self.last_vehicle_lon is not None:
+                    self.calculate_target_bearing_to_vehicle(self.last_vehicle_lat, self.last_vehicle_lon)
 
     def calculate_target_bearing_to_vehicle(self, vehicle_lat, vehicle_lon):
         """Calculates bearing from user to vehicle."""
