@@ -11,6 +11,7 @@ from views.main_window import MainWindow
 from models.telemetry_model import TelemetryModel
 from models.connection_model import ConnectionModel
 from models.settings_model import SettingsModel
+# from controllers.event_controller import EventController
 from controllers.serial_controller import SerialController
 from controllers.telemetry_controller import TelemetryController
 from controllers.map_controller import MapController

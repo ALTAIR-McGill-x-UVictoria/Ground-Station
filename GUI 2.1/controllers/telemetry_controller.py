@@ -230,48 +230,91 @@ class TelemetryController(QObject):
             return False
     
     def _process_flight_computer_packet(self, data):
-        """Process flight computer packet with 31 comma-separated values"""
+        """Process flight computer packet with flexible field count based on actual data"""
         try:
             values = data.split(',')
-            if len(values) < 19:  # Minimum expected values
-                self.packet_parsed.emit(False, f"Invalid FC packet format: expected at least 19 values, got {len(values)}")
+            if len(values) < 34:  # Minimum based on your example
+                self.packet_parsed.emit(False, f"Invalid FC packet format: expected at least 34 values, got {len(values)}")
                 return False
             
-            # Parse according to the FC packet structure
+            # Parse according to the new FC packet structure (flexible field count)
             fc_data = {
+                # Basic communication data (3 fields: 0-2)
                 'ack': int(values[0]) if values[0].strip() else 0,
                 'rssi': int(values[1]) if values[1].strip() else 0,
                 'snr': int(values[2]) if values[2].strip() else 0,
-                'roll': float(values[3]) if values[3].strip() else 0.0,
-                'pitch': float(values[4]) if values[4].strip() else 0.0,
-                'yaw': float(values[5]) if values[5].strip() else 0.0,
-                'pressure': float(values[6]) if values[6].strip() else 0.0,
-                'temperature': float(values[7]) if values[7].strip() else 0.0,
-                'altitude': float(values[8]) if values[8].strip() else 0.0,
-                'sd_status': bool(int(values[9])) if values[9].strip() else False,
-                'actuator_status': bool(int(values[10])) if values[10].strip() else False,
-                'photodiode1': int(values[11]) if values[11].strip() else 0,
-                'photodiode2': int(values[12]) if values[12].strip() else 0,
-                'gps_lat': float(values[13]) if values[13].strip() else 0.0,
-                'gps_lon': float(values[14]) if values[14].strip() else 0.0,
-                'gps_alt': float(values[15]) if values[15].strip() else 0.0,
-                'ground_speed': float(values[16]) if values[16].strip() else 0.0,
-                'gps_time': float(values[17]) if values[17].strip() else 0.0,
-                'gps_valid': bool(int(values[18])) if values[18].strip() else False
+                
+                # FC time data (2 fields: 3-4)
+                'fc_unix_time_usec': int(values[3]) if values[3].strip() else 0,
+                'fc_boot_time_ms': int(values[4]) if values[4].strip() else 0,
+                
+                # Pixhawk GPS data (5 fields: 5-9)
+                'gps_lat': float(values[5]) if values[5].strip() else 0.0,
+                'gps_lon': float(values[6]) if values[6].strip() else 0.0,
+                'gps_alt': float(values[7]) if values[7].strip() else 0.0,
+                'ground_speed': float(values[8]) if values[8].strip() else 0.0,
+                'gps_time': float(values[9]) if values[9].strip() else 0.0,
+                
+                # FC IMU data (3 fields: 10-12)
+                'abs_pressure1': float(values[10]) if values[10].strip() else 0.0,
+                'temperature1': float(values[11]) if values[11].strip() else 0.0,
+                'altitude1': float(values[12]) if values[12].strip() else 0.0,
+                
+                # Pixhawk IMU data (3 fields: 13-15)
+                'abs_pressure2': float(values[13]) if values[13].strip() else 0.0,
+                'temperature2': float(values[14]) if values[14].strip() else 0.0,
+                'diff_pressure2': float(values[15]) if values[15].strip() else 0.0,
+                
+                # FC Status (2 fields: 16-17)
+                'sd_status': bool(int(values[16])) if values[16].strip() else False,
+                'actuator_status': bool(int(values[17])) if values[17].strip() else False,
+                
+                # Pixhawk Status (3 fields: 18-20)
+                'logging_active': bool(int(values[18])) if values[18].strip() else False,
+                'write_rate': int(values[19]) if values[19].strip() else 0,
+                'space_left': int(values[20]) if values[20].strip() else 0,
+                
+                # Pixhawk Time (2 fields: 21-22)
+                'pix_unix_time_usec': int(values[21]) if values[21].strip() else 0,
+                'pix_boot_time_ms': int(values[22]) if values[22].strip() else 0,
+                
+                # Vibration data (6 fields: 23-28)
+                'vibe_x': float(values[23]) if values[23].strip() else 0.0,
+                'vibe_y': float(values[24]) if values[24].strip() else 0.0,
+                'vibe_z': float(values[25]) if values[25].strip() else 0.0,
+                'clip_x': int(values[26]) if values[26].strip() else 0,
+                'clip_y': int(values[27]) if values[27].strip() else 0,
+                'clip_z': int(values[28]) if values[28].strip() else 0,
+                
+                # Navigation/GPS bearing data (6 fields: 29-34)
+                'gps_bearing': float(values[29]) if values[29].strip() else 0.0,
+                'gps_bearing_magnetic': float(values[30]) if values[30].strip() else 0.0,
+                'gps_bearing_true': float(values[31]) if values[31].strip() else 0.0,
+                'gps_bearing_ground_speed': float(values[32]) if values[32].strip() else 0.0,
+                'gps_bearing_ground_speed_magnetic': float(values[33]) if values[33].strip() else 0.0,
+                'gps_bearing_ground_speed_true': float(values[34]) if len(values) > 34 and values[34].strip() else 0.0,
+                
+                # Photodiode data (2 fields: 35-36) - if available
+                'photodiode1': int(values[35]) if len(values) > 35 and values[35].strip() else 0,
+                'photodiode2': int(values[36]) if len(values) > 36 and values[36].strip() else 0,
+                
+                # Battery voltages - if available in future packets
+                'fc_battery_voltage': float(values[37]) if len(values) > 37 and values[37].strip() else 0.0,
+                'led_battery_voltage': float(values[38]) if len(values) > 38 and values[38].strip() else 0.0,
             }
             
             # Update telemetry model with flight computer data
             self.telemetry_model.update_flight_computer_telemetry(fc_data)
             
             # Emit GPS update signal if valid
-            if fc_data['gps_valid'] and fc_data['gps_lat'] != 0 and fc_data['gps_lon'] != 0:
+            if fc_data['gps_lat'] != 0 and fc_data['gps_lon'] != 0:
                 self.gps_updated.emit(
                     fc_data['gps_lat'],
                     fc_data['gps_lon'],
                     fc_data['gps_alt']
                 )
             
-            self.packet_parsed.emit(True, "Flight computer telemetry received")
+            self.packet_parsed.emit(True, f"Flight computer telemetry received ({len(values)} fields)")
             return True
             
         except (ValueError, IndexError) as e:

@@ -155,9 +155,11 @@ class DashboardPanel(QWidget):
         system_parameters = [
             ("SD Status", "", 0, 0, "SD Card Status"),
             ("Actuator Status", "", 0, 1, "Actuator System Status"), # Changed position
-            ("Roll", "°", 1, 0, "IMU Roll"), # Added IMU data
-            ("Pitch", "°", 1, 1, "IMU Pitch"),
-            ("Yaw", "°", 2, 0, "IMU Yaw") # Added IMU Yaw, span if needed
+            # ("Roll", "°", 1, 0, "IMU Roll"), # Added IMU data
+            # ("Pitch", "°", 1, 1, "IMU Pitch"),
+            # ("Yaw", "°", 2, 0, "IMU Yaw") # Added IMU Yaw, span if needed
+            ("Main Battery Voltage", "V", 1, 0, "Main battery voltage"),
+            ("LED Battery Voltage", "V", 1, 1, "LED battery voltage")
         ]
         self.add_parameters_to_layout(system_parameters, system_layout_grid)
         main_layout.addWidget(system_group, 1, 1)
@@ -279,8 +281,8 @@ class DashboardPanel(QWidget):
 
         # Flight Data
         self.update_parameter("Altitude", data.get('altitude', 0.0))
-        self.update_parameter("Temperature", data.get('temperature', 0.0))
-        self.update_parameter("Pressure", data.get('pressure', 0.0))
+        self.update_parameter("Temperature", data.get('temperature2', 0.0))
+        self.update_parameter("Pressure", data.get('pressure2', 0.0))
         self.update_parameter("GPS Altitude", data.get('gps_alt', 0.0))
 
         # Radio Status
@@ -292,9 +294,11 @@ class DashboardPanel(QWidget):
         # System Status
         self.update_parameter("SD Status", "Active" if data.get('sd_status', False) else "Inactive", format_str="{}")
         self.update_parameter("Actuator Status", "Active" if data.get('actuator_status', False) else "Inactive", format_str="{}")
-        self.update_parameter("Roll", data.get('fRoll', 0.0))
-        self.update_parameter("Pitch", data.get('fPitch', 0.0))
-        self.update_parameter("Yaw", data.get('fYaw', 0.0))
+        self.update_parameter("Main Battery Voltage", data.get('fc_battery_voltage', 0.0), format_str="{:.2f} V")
+        self.update_parameter("LED Battery Voltage", data.get('led_battery_voltage', 0.0), format_str="{:.2f} V")
+        # self.update_parameter("Roll", data.get('fRoll', 0.0))
+        # self.update_parameter("Pitch", data.get('fPitch', 0.0))
+        # self.update_parameter("Yaw", data.get('fYaw', 0.0))
 
     # Placeholder for target bearing updates if MapController signals it
     def update_target_bearing(self, bearing):

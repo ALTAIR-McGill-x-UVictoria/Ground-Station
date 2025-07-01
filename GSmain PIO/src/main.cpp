@@ -262,12 +262,16 @@ String commandParser() {
     if (strcmp(messageFromPC, "ping") == 0) {
       dat = dat + "1,000.00";
     } else if (strcmp(messageFromPC, "led1") == 0) {
-      dat = "2," + String(fmodf(floatFromPC, 100.0));
+      dat = dat + "2," + String(fmodf(floatFromPC, 100.0));
     } else if (strcmp(messageFromPC, "clearq") == 0) {
       while (!queueIsEmpty()) dequeue();
       Serial.println("Cleared queue");
+    } else if (messageFromPC[0] == 'c'){
+      char truncated[32];  // Allocate proper buffer
+      strcpy(truncated, messageFromPC);
+      dat = dat + String(truncated + 1) + "," + String(floatFromPC); // Skip the 'c' character and convert to String
     } else {
-      dat = "0,000.00";
+      dat = "GS:0,000.00";
       Serial.print("Invalid command: ");
       Serial.println(messageFromPC);
     }

@@ -68,9 +68,61 @@ class TelemetryModel(QObject):
         # Maximum number of data points to keep
         self.max_data_points = 1000
 
-        # Add these if they don't exist
+        # Additional sensor data
         self.photodiode1 = 0
         self.photodiode2 = 0
+        
+        # Status fields
+        self.led_status = False
+        self.source_status = False
+        self.ack_status = False
+        
+        # Time fields from new FC packet format
+        self.fc_unix_time_usec = 0
+        self.fc_boot_time_ms = 0
+        self.pix_unix_time_usec = 0
+        self.pix_boot_time_ms = 0
+        
+        # IMU data from FC and Pixhawk
+        self.abs_pressure1 = 0.0  # FC IMU
+        self.temperature1 = 0.0   # FC IMU (same as self.temperature)
+        self.altitude1 = 0.0      # FC IMU (same as self.altitude)
+        self.abs_pressure2 = 0.0  # Pixhawk IMU
+        self.temperature2 = 0.0   # Pixhawk IMU
+        self.diff_pressure2 = 0.0 # Pixhawk IMU
+        
+        # Pixhawk status
+        self.logging_active = False
+        self.write_rate = 0
+        self.space_left = 0
+        
+        # Vibration data
+        self.vibe_x = 0.0
+        self.vibe_y = 0.0
+        self.vibe_z = 0.0
+        self.clip_x = 0
+        self.clip_y = 0
+        self.clip_z = 0
+        
+        # Navigation/GPS bearing data
+        self.gps_bearing = 0.0
+        self.gps_bearing_magnetic = 0.0
+        self.gps_bearing_true = 0.0
+        self.gps_bearing_ground_speed = 0.0
+        self.gps_bearing_ground_speed_magnetic = 0.0
+        self.gps_bearing_ground_speed_true = 0.0
+        
+        # Battery voltages
+        self.fc_battery_voltage = 0.0
+        self.led_battery_voltage = 0.0
+        
+        # Legacy fields for backward compatibility
+        self.battery_voltage = 0.0
+        self.current_draw = 0.0
+        self.humidity = 0.0
+        self.packet_count = 0
+        self.flight_mode = 0
+        self.error_flags = 0
         
         # Initialize arrays that might be missing
         if not hasattr(self, 'vertical_speed_data'):
@@ -228,9 +280,53 @@ class TelemetryModel(QObject):
             # Status data
             'sd_status': self.sd_status,
             'actuator_status': self.actuator_status,
+            'led_status': self.led_status,
+            'source_status': self.source_status,
+            'ack_status': self.ack_status,
             'ack': getattr(self, 'ack', 0),
+            # Sensor data
             'photodiode1': self.photodiode1 if hasattr(self, 'photodiode1') else 0,
             'photodiode2': self.photodiode2 if hasattr(self, 'photodiode2') else 0,
+            # Time fields from new FC packet format
+            'fc_unix_time_usec': getattr(self, 'fc_unix_time_usec', 0),
+            'fc_boot_time_ms': getattr(self, 'fc_boot_time_ms', 0),
+            'pix_unix_time_usec': getattr(self, 'pix_unix_time_usec', 0),
+            'pix_boot_time_ms': getattr(self, 'pix_boot_time_ms', 0),
+            # IMU data
+            'abs_pressure1': getattr(self, 'abs_pressure1', 0.0),
+            'temperature1': getattr(self, 'temperature1', 0.0),
+            'altitude1': getattr(self, 'altitude1', 0.0),
+            'abs_pressure2': getattr(self, 'abs_pressure2', 0.0),
+            'temperature2': getattr(self, 'temperature2', 0.0),
+            'diff_pressure2': getattr(self, 'diff_pressure2', 0.0),
+            # Pixhawk status
+            'logging_active': getattr(self, 'logging_active', False),
+            'write_rate': getattr(self, 'write_rate', 0),
+            'space_left': getattr(self, 'space_left', 0),
+            # Vibration data
+            'vibe_x': getattr(self, 'vibe_x', 0.0),
+            'vibe_y': getattr(self, 'vibe_y', 0.0),
+            'vibe_z': getattr(self, 'vibe_z', 0.0),
+            'clip_x': getattr(self, 'clip_x', 0),
+            'clip_y': getattr(self, 'clip_y', 0),
+            'clip_z': getattr(self, 'clip_z', 0),
+            # Navigation/GPS bearing data
+            'gps_bearing': getattr(self, 'gps_bearing', 0.0),
+            'gps_bearing_magnetic': getattr(self, 'gps_bearing_magnetic', 0.0),
+            'gps_bearing_true': getattr(self, 'gps_bearing_true', 0.0),
+            'gps_bearing_ground_speed': getattr(self, 'gps_bearing_ground_speed', 0.0),
+            'gps_bearing_ground_speed_magnetic': getattr(self, 'gps_bearing_ground_speed_magnetic', 0.0),
+            'gps_bearing_ground_speed_true': getattr(self, 'gps_bearing_ground_speed_true', 0.0),
+            # Battery voltages
+            'fc_battery_voltage': getattr(self, 'fc_battery_voltage', 0.0),
+            'led_battery_voltage': getattr(self, 'led_battery_voltage', 0.0),
+            # Legacy fields for backward compatibility
+            'battery_voltage': getattr(self, 'battery_voltage', 0.0),
+            'current_draw': getattr(self, 'current_draw', 0.0),
+            'humidity': getattr(self, 'humidity', 0.0),
+            'packet_count': getattr(self, 'packet_count', 0),
+            'flight_mode': getattr(self, 'flight_mode', 0),
+            'error_flags': getattr(self, 'error_flags', 0),
             # Alternative naming for backward compatibility
             'fRoll': self.roll,
             'fPitch': self.pitch,
@@ -272,33 +368,86 @@ class TelemetryModel(QObject):
         self.update_signal(gs_data['rssi'], gs_data['snr'])
     
     def update_flight_computer_telemetry(self, fc_data):
-        """Update flight computer telemetry data"""
-        # This is similar to the existing update_telemetry but specifically for FC data
+        """Update flight computer telemetry data with new extended format"""
         current_time = time.time() - self.start_time
         
-        # Update current values
-        self.ack = fc_data['ack']
-        self.rssi = fc_data['rssi']
-        self.snr = fc_data['snr']
-        self.roll = fc_data['roll']
-        self.pitch = fc_data['pitch']
-        self.yaw = fc_data['yaw']
-        self.pressure = fc_data['pressure']
-        self.temperature = fc_data['temperature']
-        self.altitude = fc_data['altitude']
-        self.sd_status = fc_data['sd_status']
-        self.actuator_status = fc_data['actuator_status']
-        self.photodiode1 = fc_data['photodiode1']
-        self.photodiode2 = fc_data['photodiode2']
-        self.gps_lat = fc_data['gps_lat']
-        self.gps_lon = fc_data['gps_lon']
-        self.gps_alt = fc_data['gps_alt']
-        self.ground_speed = fc_data['ground_speed']
-        self.gps_time = fc_data['gps_time']
-        self.gps_valid = fc_data['gps_valid']
+        # Update current values - handle both old and new format fields
+        self.ack = fc_data.get('ack', 0)
+        self.rssi = fc_data.get('rssi', 0)
+        self.snr = fc_data.get('snr', 0)
+        
+        # Time fields
+        self.fc_unix_time_usec = fc_data.get('fc_unix_time_usec', 0)
+        self.fc_boot_time_ms = fc_data.get('fc_boot_time_ms', 0)
+        self.pix_unix_time_usec = fc_data.get('pix_unix_time_usec', 0)
+        self.pix_boot_time_ms = fc_data.get('pix_boot_time_ms', 0)
+        
+        # GPS data (Pixhawk GPS)
+        self.gps_lat = fc_data.get('gps_lat', 0.0)
+        self.gps_lon = fc_data.get('gps_lon', 0.0)
+        self.gps_alt = fc_data.get('gps_alt', 0.0)
+        self.ground_speed = fc_data.get('ground_speed', 0.0)
+        self.gps_speed = self.ground_speed  # Keep both for compatibility
+        self.gps_time = fc_data.get('gps_time', 0.0)
+        self.gps_valid = self.gps_lat != 0.0 and self.gps_lon != 0.0
+        
+        # IMU data from FC
+        self.abs_pressure1 = fc_data.get('abs_pressure1', 0.0)
+        self.temperature1 = fc_data.get('temperature1', 0.0)
+        self.altitude1 = fc_data.get('altitude1', 0.0)
+        # Use FC values as primary sensor data
+        self.pressure = self.abs_pressure1
+        self.temperature = self.temperature1
+        self.altitude = self.altitude1
+        
+        # IMU data from Pixhawk
+        self.abs_pressure2 = fc_data.get('abs_pressure2', 0.0)
+        self.temperature2 = fc_data.get('temperature2', 0.0)
+        self.diff_pressure2 = fc_data.get('diff_pressure2', 0.0)
+        
+        # Status fields
+        self.sd_status = fc_data.get('sd_status', False)
+        self.actuator_status = fc_data.get('actuator_status', False)
+        self.logging_active = fc_data.get('logging_active', False)
+        self.write_rate = fc_data.get('write_rate', 0)
+        self.space_left = fc_data.get('space_left', 0)
+        
+        # Vibration data
+        self.vibe_x = fc_data.get('vibe_x', 0.0)
+        self.vibe_y = fc_data.get('vibe_y', 0.0)
+        self.vibe_z = fc_data.get('vibe_z', 0.0)
+        self.clip_x = fc_data.get('clip_x', 0)
+        self.clip_y = fc_data.get('clip_y', 0)
+        self.clip_z = fc_data.get('clip_z', 0)
+        
+        # Navigation/GPS bearing data
+        self.gps_bearing = fc_data.get('gps_bearing', 0.0)
+        self.gps_bearing_magnetic = fc_data.get('gps_bearing_magnetic', 0.0)
+        self.gps_bearing_true = fc_data.get('gps_bearing_true', 0.0)
+        self.gps_bearing_ground_speed = fc_data.get('gps_bearing_ground_speed', 0.0)
+        self.gps_bearing_ground_speed_magnetic = fc_data.get('gps_bearing_ground_speed_magnetic', 0.0)
+        self.gps_bearing_ground_speed_true = fc_data.get('gps_bearing_ground_speed_true', 0.0)
+        
+        # Photodiode data
+        self.photodiode1 = fc_data.get('photodiode1', 0)
+        self.photodiode2 = fc_data.get('photodiode2', 0)
+        
+        # Battery voltages
+        self.fc_battery_voltage = fc_data.get('fc_battery_voltage', 0.0)
+        self.led_battery_voltage = fc_data.get('led_battery_voltage', 0.0)
+        # Set main battery voltage to FC battery for compatibility
+        self.battery_voltage = self.fc_battery_voltage
+        
+        # Legacy field support for backward compatibility
+        if 'roll' in fc_data:
+            self.roll = fc_data['roll']
+        if 'pitch' in fc_data:
+            self.pitch = fc_data['pitch']
+        if 'yaw' in fc_data:
+            self.yaw = fc_data['yaw']
         
         # Calculate vertical speed
-        self.calculate_vertical_speed(fc_data['altitude'])
+        self.calculate_vertical_speed(self.altitude)
         
         # Add to arrays
         self.telemetry_time_data.append(current_time)
@@ -325,4 +474,4 @@ class TelemetryModel(QObject):
         if self.gps_valid and self.gps_lat != 0 and self.gps_lon != 0:
             self.position_updated.emit(self.gps_lat, self.gps_lon, self.gps_alt)
         
-        print(f"Flight computer telemetry updated: alt={self.altitude}m, temp={self.temperature}°C, GPS valid={self.gps_valid}")
+        print(f"Flight computer telemetry updated: alt={self.altitude}m, temp={self.temperature}°C, GPS valid={self.gps_valid}, battery={self.fc_battery_voltage}V")

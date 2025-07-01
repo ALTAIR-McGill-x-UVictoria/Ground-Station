@@ -11,6 +11,7 @@ from views.panels.plot_panel import PlotPanel
 from views.panels.command_panel import CommandPanel
 from views.panels.console_panel import ConsolePanel
 from views.panels.tracking_panel import TrackingPanel
+from views.panels.event_panel import EventPanel
 # from views.dialogs.settings_dialog import SettingsDialog # If you have a settings dialog
 
 class MainWindow(QMainWindow):
@@ -26,6 +27,7 @@ class MainWindow(QMainWindow):
         self.serial_controller = serial_controller
         self.command_controller = command_controller
         self.map_controller = map_controller
+
         
         self.setWindowTitle("HAB Ground Station") # Title from gui.py
         self.setMinimumSize(1200, 800) # Min size from gui.py
@@ -69,7 +71,8 @@ class MainWindow(QMainWindow):
         self.map_panel = MapPanel(self.map_controller, self.telemetry_model, self.settings_model, self)
         self.tracking_panel = TrackingPanel(self.telemetry_model, self.map_controller, self)
         self.console_panel = ConsolePanel(self.serial_controller, self.settings_model, self)
-        
+        # self.event_panel = EventPenl(self.)
+        # 
         self.tabs.addTab(self.dashboard_panel, "Dashboard")
         self.tabs.addTab(self.plot_panel, "Plots")
         self.tabs.addTab(self.map_panel, "Map")

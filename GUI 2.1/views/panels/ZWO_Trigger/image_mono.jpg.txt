@@ -1,0 +1,14 @@
+AutoExpMaxExpMS: 30000
+AutoExpMaxGain: 300
+AutoExpTargetBrightness: 100
+BandWidth: 40
+Exposure: 1000
+Flip: 0
+Gain: 200
+HardwareBin: 0
+HighSpeedMode: 0
+MonoBin: 0
+Offset: 50
+Temperature: 275
+WB_B: 99
+WB_R: 75
