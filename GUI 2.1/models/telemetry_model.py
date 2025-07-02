@@ -13,6 +13,7 @@ class TelemetryModel(QObject):
     signal_updated = pyqtSignal(int, int)  # rssi, snr
     ground_station_gps_updated = pyqtSignal(float, float, float)  # lat, lon, alt
     status_indicator_changed = pyqtSignal(str, object)  # indicator_name, new_value
+    packet_received = pyqtSignal(dict)
     
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -262,6 +263,7 @@ class TelemetryModel(QObject):
         
         # Debug output
         print(f"Updated telemetry from SDR: alt={self.altitude}m, temp={self.temperature}°C")
+        self.packet_received.emit(packet)
     
     def get_latest_telemetry(self):
         """Return a dictionary with the current telemetry values"""
@@ -491,3 +493,4 @@ class TelemetryModel(QObject):
             self.position_updated.emit(self.gps_lat, self.gps_lon, self.gps_alt)
         
         print(f"Flight computer telemetry updated: alt={self.altitude}m, temp={self.temperature}°C, GPS valid={self.gps_valid}, battery={self.fc_battery_voltage}V")
+        self.packet_received.emit(fc_data)

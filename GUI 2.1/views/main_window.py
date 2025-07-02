@@ -12,7 +12,7 @@ from views.panels.command_panel import CommandPanel
 from views.panels.console_panel import ConsolePanel
 from views.panels.tracking_panel import TrackingPanel
 from views.panels.event_panel import EventPanel
-# from views.dialogs.settings_dialog import SettingsDialog # If you have a settings dialog
+from views.panels.table_panel import TablePanel
 
 class MainWindow(QMainWindow):
     """Main application window, structured based on gui.py"""
@@ -48,6 +48,9 @@ class MainWindow(QMainWindow):
         self.command_controller.command_log.connect(self.event_panel.log_event)
         # Connect after event_panel is created
         self.telemetry_model.status_indicator_changed.connect(self.handle_status_indicator_change)
+        # Connect new signal for raw packets to table panel
+        if hasattr(self.telemetry_model, "packet_received"):
+            self.telemetry_model.packet_received.connect(self.add_radio_packet_to_table)
 
         # Telemetry updates to panels (already connected in original file, ensure they are correct)
         # self.telemetry_model.data_updated.connect(self.dashboard_panel.update_indicators_from_model) # dashboard handles its own connection
@@ -75,13 +78,15 @@ class MainWindow(QMainWindow):
         self.tracking_panel = TrackingPanel(self.telemetry_model, self.map_controller, self)
         self.console_panel = ConsolePanel(self.serial_controller, self.settings_model, self)
         self.event_panel = EventPanel(self.serial_controller, self.settings_model, self)
+        self.table_panel = TablePanel(self)  # <-- Add this line
 
         self.tabs.addTab(self.dashboard_panel, "Dashboard")
         self.tabs.addTab(self.plot_panel, "Plots")
         self.tabs.addTab(self.map_panel, "Map")
         self.tabs.addTab(self.tracking_panel, "Tracking")
-        self.tabs.addTab(self.console_panel, "Console")  # Console is now its own tab
-        self.tabs.addTab(self.event_panel, "Events")     # <-- Add this line
+        self.tabs.addTab(self.console_panel, "Console")
+        self.tabs.addTab(self.event_panel, "Events")
+        self.tabs.addTab(self.table_panel, "Packets")  # <-- Add this line
 
         left_v_layout.addWidget(self.tabs, 1) # Give full stretch to tabs
 
@@ -208,3 +213,7 @@ class MainWindow(QMainWindow):
             self.serial_controller.disconnect()
         # Add any other cleanup (e.g., stopping timers, threads)
         super().closeEvent(event)
+
+    def add_radio_packet_to_table(self, packet: dict):
+        """Call this method whenever a radio packet is received."""
+        self.table_panel.add_packet(packet)
