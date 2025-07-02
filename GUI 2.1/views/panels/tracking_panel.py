@@ -1010,7 +1010,7 @@ class TrackingPanel(QWidget):
             if abs_minute % 2 == 1:  # Odd minute
                 # 1 second on, 1 second off pattern
                 cycle_pos = abs_second % 2
-                green_state = 2 if cycle_pos < 1 else 0
+                green_state = 2 if (cycle_pos < 1 and abs_second < 50) else 0
             else:
                 green_state = 0
             
