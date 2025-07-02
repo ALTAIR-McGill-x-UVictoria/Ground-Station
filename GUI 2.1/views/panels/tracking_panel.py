@@ -94,16 +94,24 @@ try:
     camera.set_control_value(zwoasi.ASI_BRIGHTNESS, 50)
     camera.set_control_value(zwoasi.ASI_FLIP, 0)
     
-    # Enable stills mode
-    try:
-        camera.stop_video_capture()
-        camera.stop_exposure()
-    except:
-        pass  # Ignore errors if already stopped
+    # # Enable stills mode
+    # try:
+    #     camera.stop_video_capture()
+    #     camera.stop_exposure()
+    # except:
+    #     pass  # Ignore errors if already stopped
     
     CAMERA_AVAILABLE = True
     print("ZWO Camera module imported and initialized successfully")
     
+    def RGB_photo(filename, gain, exposure):
+        camera.set_image_type(zwoasi.ASI_IMG_RGB24)
+        camera.capture(filename=filename)
+        save_control_values(filename, camera.get_control_values())
+        print(f"Captured RGB: {filename} with gain={gain}, exposure={exposure}")
+
+
+
 except ImportError as e:
     print(f"ZWO Camera module not available: {e}")
     CAMERA_AVAILABLE = False
@@ -112,10 +120,23 @@ except ImportError as e:
     controls = None
     
     # Create dummy functions for when camera is not available
-    def RAW16_photo(filename, gain, exposure):
-        print(f"CAMERA NOT AVAILABLE - Would capture RAW16: {filename} with gain={gain}, exposure={exposure}")
-    def RGB_photo(filename, gain, exposure):
-        print(f"CAMERA NOT AVAILABLE - Would capture RGB: {filename} with gain={gain}, exposure={exposure}")
+    # def RAW16_photo(filename, gain, exposure):
+        # print(f"CAMERA NOT AVAILABLE - Would capture RAW16: {filename} with gain={gain}, exposure={exposure}")
+    # def save_control_values(filename, settings):
+    #     try:
+    #         settings_filename = filename + '.txt'
+    #         with open(settings_filename, 'w') as f:
+    #             for k in sorted(settings.keys()):
+    #                 f.write('%s: %s\n' % (k, str(settings[k])))
+    #         print('Camera settings saved to %s' % settings_filename)
+    #     except Exception as e:
+    #         print(f'Error saving camera settings: {e}')
+            
+    # def RGB_photo(filename, gain, exposure):
+    #     # camera.set_image_type(zwoasi.ASI_IMG_RGB24)
+    #     # camera.capture(filename=filename)
+    #     save_control_values(filename, camera.get_control_values())
+    #     print(f"Captured RGB: {filename} with gain={gain}, exposure={exposure}")
 
 class StatusIndicator(QFrame):
     """Custom status indicator widget"""
@@ -218,12 +239,13 @@ class TrackingPanel(QWidget):
         
         # Variables for tracking LED status and exposure timing
         self.last_minute = -1  # Track minute changes
-        self.last_exposure_check = 0  # Track exposure timing
+        self.last_exposure_check = -1  # Track exposure timing
         
         # Camera settings (initialize before UI setup)
         self.camera_gain = 150  # Default gain
         self.camera_exposure = 30000  # Default exposure in microseconds
         self.image_counter = 0  # Counter for unique filenames
+        
         
         self.setup_ui()
         self.setup_connections()
@@ -408,11 +430,12 @@ class TrackingPanel(QWidget):
     
     def generate_filename(self):
         """Generate a unique filename for camera capture"""
-        current_time = QDateTime.currentDateTimeUtc()
+        # current_time = QDateTime.currentDateTimeUtc()
+        current_time = gps_utc_time
         timestamp = current_time.toString("yyyyMMdd_hhmmss")
         self.image_counter += 1
         # Use .jpg extension for RGB images
-        filename = f"balloon_tracking_{timestamp}_{self.image_counter:04d}.jpg"
+        filename = f"balloon_tracking_{timestamp}_{self.image_counter:04d}.tiff"
         return filename
     
     def create_status_section(self):
@@ -848,6 +871,7 @@ class TrackingPanel(QWidget):
         
         # Check if minute has changed for LED status update
         if current_minute != self.last_minute:
+
             self.update_led_status()
             self.last_minute = current_minute
         
@@ -858,14 +882,19 @@ class TrackingPanel(QWidget):
             
             # Check if we should send EXPOSURE START message every 20 seconds
             # (at 0, 20, 40 seconds of even minutes)
-            if seconds_in_minute % 20 == 0 and seconds_in_minute != self.last_exposure_check:
-                print("EXPOSURE START")
-                # Trigger camera capture
-                self.trigger_camera_capture()
-                self.last_exposure_check = seconds_in_minute
+            if (seconds_in_minute // 10) % 2 == 0:
+                if (self.last_exposure_check == -1 or current_second > (self.last_exposure_check + (self.camera_exposure // 1e6))) and seconds_in_minute != self.last_exposure_check:
+                    print(f"EXPOSURE START {current_second}")
+                    self.trigger_camera_capture()
+                    # Trigger camera capture
+                    self.last_exposure_check = seconds_in_minute
+
+            else:
+                self.last_exposure_check = -1
+
         else:
             # Reset exposure check for odd minutes
-            self.last_exposure_check = -1
+            self.last_exposure_check = -1   
     
     def update_led_status(self):
         """Update LED status indicator based on even/odd minute"""
@@ -1026,17 +1055,18 @@ class TrackingPanel(QWidget):
 
     def trigger_camera_capture(self):
         """Trigger camera capture and save image with unique filename"""
+
         try:
             if CAMERA_AVAILABLE and camera:
                 # Initialize camera for capture
                 if not self.initialize_camera_for_capture():
                     print("Failed to initialize camera for capture")
                     return
-                
+
+            # Check if seconds increased by 2 (handle wrap-around at 60)
                 filename = self.generate_filename()
                 print(f"Triggering camera capture: {filename}")
                 print(f"Camera settings - Gain: {self.camera_gain}, Exposure: {self.camera_exposure}μs")
-                
                 # Call the RGB_photo function from ZWO_Trigger
                 RGB_photo(filename, self.camera_gain, self.camera_exposure)
                 
@@ -1049,22 +1079,22 @@ class TrackingPanel(QWidget):
                     
                     # Reset status after 3 seconds
                     QTimer.singleShot(3000, lambda: self.reset_camera_status())
-                    
+                # Update last_seconds after the check
+
             else:
-                print("Camera not available - skipping capture")
+                print("Camera not available or not initialized")
                 # Call dummy function to show what would happen
-                RGB_photo("dummy_filename.jpg", self.camera_gain, self.camera_exposure)
-                
+                # RGB_photo("dummy_filename.jpg", self.camera_gain, self.camera_exposure)
         except Exception as e:
             print(f"Error during camera capture: {e}")
             # Update camera status to show error
             if hasattr(self, 'camera_status_label'):
                 self.camera_status_label.setText("ERROR")
                 self.camera_status_label.setStyleSheet("color: #ff0000; margin-bottom: 6px;")
-                
                 # Reset status after 5 seconds
                 QTimer.singleShot(5000, lambda: self.reset_camera_status())
     
+        
     def reset_camera_status(self):
         """Reset camera status display to default"""
         if hasattr(self, 'camera_status_label'):
