@@ -45,7 +45,10 @@ class MainWindow(QMainWindow):
         self.connection_model.connection_changed.connect(self.update_connection_status_display)
         self.serial_controller.connection_error.connect(self.show_error_message_in_statusbar)
         self.command_controller.command_log.connect(self.show_status_message_in_statusbar) # For command feedback
-        
+        self.command_controller.command_log.connect(self.event_panel.log_event)
+        # Connect after event_panel is created
+        self.telemetry_model.status_indicator_changed.connect(self.handle_status_indicator_change)
+
         # Telemetry updates to panels (already connected in original file, ensure they are correct)
         # self.telemetry_model.data_updated.connect(self.dashboard_panel.update_indicators_from_model) # dashboard handles its own connection
         # self.telemetry_model.data_updated.connect(self.plot_panel.update_plots_from_model) # plot_panel handles its own
@@ -71,13 +74,15 @@ class MainWindow(QMainWindow):
         self.map_panel = MapPanel(self.map_controller, self.telemetry_model, self.settings_model, self)
         self.tracking_panel = TrackingPanel(self.telemetry_model, self.map_controller, self)
         self.console_panel = ConsolePanel(self.serial_controller, self.settings_model, self)
-        # self.event_panel = EventPenl(self.)
-        # 
+        self.event_panel = EventPanel(self.serial_controller, self.settings_model, self)
+
         self.tabs.addTab(self.dashboard_panel, "Dashboard")
         self.tabs.addTab(self.plot_panel, "Plots")
         self.tabs.addTab(self.map_panel, "Map")
         self.tabs.addTab(self.tracking_panel, "Tracking")
         self.tabs.addTab(self.console_panel, "Console")  # Console is now its own tab
+        self.tabs.addTab(self.event_panel, "Events")     # <-- Add this line
+
         left_v_layout.addWidget(self.tabs, 1) # Give full stretch to tabs
 
         # Right side: Command Panel
@@ -191,6 +196,11 @@ class MainWindow(QMainWindow):
             self.dashboard_panel.vehicle_compass.setBearing(bearing_value)
         elif bearing_type == "target_bearing":
             self.dashboard_panel.target_compass.setBearing(bearing_value)
+
+    def handle_status_indicator_change(self, indicator_name, new_value):
+        """Log status indicator changes from radio packets to the event log."""
+        msg = f"Status indicator '{indicator_name}' changed to: {new_value}"
+        self.event_panel.log_event(msg)
 
     def closeEvent(self, event):
         # Ensure disconnection on close

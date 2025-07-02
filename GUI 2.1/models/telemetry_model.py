@@ -12,9 +12,10 @@ class TelemetryModel(QObject):
     position_updated = pyqtSignal(float, float, float)  # lat, lon, alt
     signal_updated = pyqtSignal(int, int)  # rssi, snr
     ground_station_gps_updated = pyqtSignal(float, float, float)  # lat, lon, alt
+    status_indicator_changed = pyqtSignal(str, object)  # indicator_name, new_value
     
-    def __init__(self):
-        super().__init__()
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         
         # Initialize time reference
         self.start_time = time.time()
@@ -127,6 +128,9 @@ class TelemetryModel(QObject):
         # Initialize arrays that might be missing
         if not hasattr(self, 'vertical_speed_data'):
             self.vertical_speed_data = []
+        
+        # Status indicators storage
+        self._status_indicators = {}
     
     def update_signal(self, rssi, snr):
         """Update signal strength data"""
@@ -161,6 +165,9 @@ class TelemetryModel(QObject):
         for key, value in telemetry_data.items():
             if hasattr(self, key):
                 setattr(self, key, value)
+                # Call update_status_indicator for status fields
+                if key in ['sd_status', 'actuator_status', 'led_status', 'source_status', 'ack_status']:
+                    self.update_status_indicator(key, value)
             else:
                 print(f"Warning: TelemetryModel has no attribute '{key}'")
         
@@ -366,7 +373,13 @@ class TelemetryModel(QObject):
         
         # Update signal strength data with ground station values
         self.update_signal(gs_data['rssi'], gs_data['snr'])
-    
+    def update_status_indicator(self, indicator_name, new_value):
+        """Update a status indicator and emit a signal if it changes"""
+        old_value = self._status_indicators.get(indicator_name)
+        if old_value != new_value:
+            self._status_indicators[indicator_name] = new_value
+            self.status_indicator_changed.emit(indicator_name, new_value)
+
     def update_flight_computer_telemetry(self, fc_data):
         """Update flight computer telemetry data with new extended format"""
         current_time = time.time() - self.start_time
@@ -411,6 +424,9 @@ class TelemetryModel(QObject):
         self.logging_active = fc_data.get('logging_active', False)
         self.write_rate = fc_data.get('write_rate', 0)
         self.space_left = fc_data.get('space_left', 0)
+        # Update status indicators for relevant fields
+        for status_key in ['sd_status', 'actuator_status', 'logging_active']:
+            self.update_status_indicator(status_key, getattr(self, status_key))
         
         # Vibration data
         self.vibe_x = fc_data.get('vibe_x', 0.0)
