@@ -251,27 +251,26 @@ class MapPanel(QWidget):
     def update_vehicle_marker(self, lat, lon, alt):
         """Update vehicle marker position - based on gui.py update_map_marker"""
         if lat != 0 and lon != 0:  # Only update if we have valid coordinates
-            self.last_gps_lat, self.last_gps_lon = lat, lon
-            
-            try:
-                # Update map marker using the working JavaScript function
-                js_code = f"updateMarker({lat}, {lon});"
-                self.map_view.page().runJavaScript(js_code)
-                
-                # Update GPS label
-                lat_direction = "N" if lat >= 0 else "S"
-                lon_direction = "E" if lon >= 0 else "W"
-                self.gps_label.setText(
-                    f"Vehicle: {abs(lat):.5f}°{lat_direction}, {abs(lon):.5f}°{lon_direction} | Alt: {alt:.1f}m"
-                )
-                self.gps_label.setStyleSheet(
-                    "background-color: #2a2a2a; color: #00ff00; padding: 8px 12px; "
-                    "border: 1px solid #3a3a3a; border-radius: 6px; font-family: 'Courier New'; "
-                    "font-size: 10pt; font-weight: bold; min-width: 280px;"
-                )
-                
-            except Exception as e:
-                print(f"MapPanel: Error updating vehicle marker: {e}")
+            # Only update if position actually changed
+            if (self.last_gps_lat, self.last_gps_lon) != (lat, lon):
+                self.last_gps_lat, self.last_gps_lon = lat, lon
+                try:
+                    # Update map marker using the working JavaScript function
+                    js_code = f"updateMarker({lat}, {lon});"
+                    self.map_view.page().runJavaScript(js_code)
+                except Exception as e:
+                    print(f"MapPanel: Error updating vehicle marker: {e}")
+            # ...existing code for updating GPS label...
+            lat_direction = "N" if lat >= 0 else "S"
+            lon_direction = "E" if lon >= 0 else "W"
+            self.gps_label.setText(
+                f"Vehicle: {abs(lat):.5f}°{lat_direction}, {abs(lon):.5f}°{lon_direction} | Alt: {alt:.1f}m"
+            )
+            self.gps_label.setStyleSheet(
+                "background-color: #2a2a2a; color: #00ff00; padding: 8px 12px; "
+                "border: 1px solid #3a3a3a; border-radius: 6px; font-family: 'Courier New'; "
+                "font-size: 10pt; font-weight: bold; min-width: 280px;"
+            )
         else:
             self.gps_label.setText("GPS: No Fix / Invalid Data")
             self.gps_label.setStyleSheet(
