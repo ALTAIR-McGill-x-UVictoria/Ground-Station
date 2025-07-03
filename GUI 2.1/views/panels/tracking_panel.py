@@ -440,7 +440,7 @@ class TrackingPanel(QWidget):
             time_source = "sys"
         timestamp = current_time.toString("yyyyMMdd_hhmmss")
         self.image_counter += 1
-        filename = f"balloon_tracking_{timestamp}_{time_source}_{self.image_counter:04d}.tiff"
+        filename = f"Photos/balloon_tracking_{timestamp}_{time_source}_{self.image_counter:04d}.tiff"
         return filename
     
     def create_status_section(self):
