@@ -86,7 +86,7 @@ char parseBuf[RH_RF95_MAX_MESSAGE_LEN];
 char txBuffer[64]; // Increased size for safety
 
 // Use a single buffer for both RX and TX operations
-uint8_t radioBuf[RH_RF95_MAX_MESSAGE_LEN];
+uint8_t radioBuf[250];  // Maximum size for RH_RF95
 uint8_t bufLen = 0;
 
 unsigned long lastGpsPrint = 0;
@@ -205,15 +205,21 @@ void radioRx() {
        // Get response data
       String data = queueIsEmpty() ? "0,0.000" : dequeue();
       
-      // Copy formatted string to buffer
-      memcpy(radioBuf, data.c_str(), bufLen);
+      // Clear buffer and copy response data with proper length
+      memset(radioBuf, 0, sizeof(radioBuf));
+      uint8_t dataLen = data.length();
+      if (dataLen > sizeof(radioBuf) - 1) {
+        dataLen = sizeof(radioBuf) - 1;  // Leave room for null terminator
+      }
+      memcpy(radioBuf, data.c_str(), dataLen);
+      radioBuf[dataLen] = '\0';  // Ensure null termination
       
       // For debug - print what we're sending
       Serial.print("Sending packet: ");
       Serial.println((char*)radioBuf);
       
       // Send the data
-      rf95.send(radioBuf, bufLen);
+      rf95.send(radioBuf, dataLen);
       rf95.waitPacketSent();
       rf95.setModeRx();
       

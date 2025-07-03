@@ -28,6 +28,7 @@ class TelemetryController(QObject):
         """Process incoming telemetry packet"""
         try:
             packet = packet.strip()
+            print(f"Processing packet: {packet[:100]}{'...' if len(packet) > 100 else ''}")
             
             # Check for ground station controller packet formats
             if packet.startswith('GPS:'):
@@ -57,10 +58,94 @@ class TelemetryController(QObject):
                     self.packet_parsed.emit(False, "Invalid signal format")
                     return False
             
-            # Full telemetry packet
+            # New extended telemetry packet format (should be 39+ fields)
+            elif len(values) >= 20:  # Minimum required fields for extended format
+                try:
+                    print(f"Processing extended packet with {len(values)} fields")
+                    
+                    # Helper function to safely parse values
+                    def safe_int(idx, default=0):
+                        try:
+                            return int(values[idx]) if idx < len(values) and values[idx].strip() else default
+                        except (ValueError, IndexError):
+                            return default
+                    
+                    def safe_float(idx, default=0.0):
+                        try:
+                            return float(values[idx]) if idx < len(values) and values[idx].strip() else default
+                        except (ValueError, IndexError):
+                            return default
+                    
+                    def safe_bool(idx, default=False):
+                        try:
+                            return bool(int(values[idx])) if idx < len(values) and values[idx].strip() else default
+                        except (ValueError, IndexError):
+                            return default
+                    
+                    # Parse extended telemetry data with safer indexing
+                    telemetry = {
+                        'ack': safe_int(0),
+                        'rssi': safe_int(1),
+                        'snr': safe_int(2),
+                        'fc_boot_time_ms': safe_int(4),  # Field 3 is empty, field 4 has boot time
+                        'gps_lat': safe_float(5),        # Field 5
+                        'gps_lon': safe_float(6),        # Field 6
+                        'gps_alt': safe_float(7),        # Field 7
+                        'ground_speed': safe_float(8),   # Field 8
+                        'gps_time': safe_float(9),       # Field 9
+                        # Fields 10-12 are empty (FC IMU data)
+                        'pressure': safe_float(13),      # absPressure2
+                        'temperature': safe_float(14),   # temperature2
+                        'diff_pressure2': safe_float(15), # diffPressure2
+                        'sd_status': safe_bool(16),
+                        'actuator_status': safe_bool(17),
+                        'logging_active': safe_bool(18),
+                        'write_rate': safe_int(19),
+                        'space_left': safe_int(20),
+                        # Field 21 is empty (pix_unix_time_usec)
+                        'pix_boot_time_ms': safe_int(22), # Field 22
+                        # Fields 23-28 are empty (vibration data)
+                        'gps_bearing': safe_float(29),
+                        'gps_bearing_magnetic': safe_float(30),
+                        # Fields 31-34 are empty (other bearing data)
+                        'photodiode_value1': safe_int(35),
+                        'photodiode_value2': safe_int(36),
+                        'fc_battery_voltage': safe_float(37),
+                        'led_battery_voltage': safe_float(38),
+                        # Derived fields for compatibility
+                        'gps_valid': safe_float(5) != 0.0 and safe_float(6) != 0.0,
+                        'altitude': safe_float(7),  # Use GPS altitude as primary altitude
+                        # LED status derived from photodiode values (placeholder logic)
+                        'led_status': safe_int(35) > 5 or safe_int(36) > 5,  # Adjusted threshold
+                        'source_status': True  # Placeholder - adjust based on actual requirements
+                    }
+                    
+                    print(f"Parsed key values: RSSI={telemetry['rssi']}, GPS=({telemetry['gps_lat']:.6f},{telemetry['gps_lon']:.6f}), Alt={telemetry['altitude']:.2f}")
+                    
+                    # Update model with extended telemetry
+                    self.telemetry_model.update_telemetry(telemetry)
+                    
+                    # Emit GPS update signal if valid
+                    if telemetry['gps_valid'] and telemetry['gps_lat'] != 0 and telemetry['gps_lon'] != 0:
+                        self.gps_updated.emit(
+                            telemetry['gps_lat'],
+                            telemetry['gps_lon'],
+                            telemetry['gps_alt']
+                        )
+                    
+                    # Emit success signal
+                    self.packet_parsed.emit(True, f"Extended telemetry data received ({len(values)} fields)")
+                    return True
+                    
+                except Exception as e:
+                    print(f"Extended telemetry parse error: {str(e)}")
+                    self.packet_parsed.emit(False, f"Extended telemetry parse error: {str(e)}")
+                    return False
+            
+            # Legacy full telemetry packet (17 fields) - for backward compatibility
             elif len(values) == 17:
                 try:
-                    # Parse complete telemetry data
+                    # Parse legacy complete telemetry data
                     telemetry = {
                         'ack': int(values[0]),
                         'rssi': int(values[1]),
@@ -178,6 +263,11 @@ class TelemetryController(QObject):
     def _process_gps_packet(self, data):
         """Process GPS packet: lat,lon,alt,hdop,vdop,utc_unix,satellites,speed_kmh,course"""
         try:
+            # Handle "No valid data" case
+            if "No valid data" in data:
+                self.packet_parsed.emit(True, "GPS: No valid data")
+                return True
+            
             values = data.split(',')
             if len(values) != 9:
                 self.packet_parsed.emit(False, f"Invalid GPS packet format: expected 9 values, got {len(values)}")
@@ -230,84 +320,101 @@ class TelemetryController(QObject):
             return False
     
     def _process_flight_computer_packet(self, data):
-        """Process flight computer packet with flexible field count based on actual data"""
+        """Process flight computer packet according to the new format"""
         try:
             values = data.split(',')
-            if len(values) < 34:  # Minimum based on your example
-                self.packet_parsed.emit(False, f"Invalid FC packet format: expected at least 34 values, got {len(values)}")
-                return False
+            print(f"FC packet has {len(values)} fields")
             
-            # Parse according to the new FC packet structure (flexible field count)
+            if len(values) < 30:  # Reduced minimum requirement for robustness
+                print(f"Warning: FC packet has only {len(values)} fields, expected at least 30")
+                # Still try to process it with available fields
+            
+            # Helper function to safely parse values
+            def safe_int(val, default=0):
+                try:
+                    return int(val) if val and val.strip() else default
+                except (ValueError, TypeError):
+                    return default
+            
+            def safe_float(val, default=0.0):
+                try:
+                    return float(val) if val and val.strip() else default
+                except (ValueError, TypeError):
+                    return default
+            
+            def safe_bool(val, default=False):
+                try:
+                    return bool(int(val)) if val and val.strip() else default
+                except (ValueError, TypeError):
+                    return default
+            
+            # Parse according to the exact packet structure from your C code
             fc_data = {
-                # Basic communication data (3 fields: 0-2)
-                'ack': int(values[0]) if values[0].strip() else 0,
-                'rssi': int(values[1]) if values[1].strip() else 0,
-                'snr': int(values[2]) if values[2].strip() else 0,
+                # Basic fields (0-2)
+                'ack': safe_int(values[0]) if len(values) > 0 else 0,
+                'rssi': safe_int(values[1]) if len(values) > 1 else 0,
+                'snr': safe_int(values[2]) if len(values) > 2 else 0,
                 
-                # FC time data (2 fields: 3-4)
-                'fc_unix_time_usec': int(values[3]) if values[3].strip() else 0,
-                'fc_boot_time_ms': int(values[4]) if values[4].strip() else 0,
+                # FC time (3-4) - note field 3 is empty in your format
+                'fc_unix_time_usec': safe_int(values[3]) if len(values) > 3 else 0,  # Empty in format
+                'fc_boot_time_ms': safe_int(values[4]) if len(values) > 4 else 0,
                 
-                # Pixhawk GPS data (5 fields: 5-9)
-                'gps_lat': float(values[5]) if values[5].strip() else 0.0,
-                'gps_lon': float(values[6]) if values[6].strip() else 0.0,
-                'gps_alt': float(values[7]) if values[7].strip() else 0.0,
-                'ground_speed': float(values[8]) if values[8].strip() else 0.0,
-                'gps_time': float(values[9]) if values[9].strip() else 0.0,
+                # Pixhawk GPS (5-9)
+                'gps_lat': safe_float(values[5]) if len(values) > 5 else 0.0,
+                'gps_lon': safe_float(values[6]) if len(values) > 6 else 0.0,
+                'gps_alt': safe_float(values[7]) if len(values) > 7 else 0.0,
+                'ground_speed': safe_float(values[8]) if len(values) > 8 else 0.0,
+                'gps_time': safe_float(values[9]) if len(values) > 9 else 0.0,
                 
-                # FC IMU data (3 fields: 10-12)
-                'abs_pressure1': float(values[10]) if values[10].strip() else 0.0,
-                'temperature1': float(values[11]) if values[11].strip() else 0.0,
-                'altitude1': float(values[12]) if values[12].strip() else 0.0,
+                # FC IMU (10-12) - empty in your format
+                'abs_pressure1': safe_float(values[10]) if len(values) > 10 else 0.0,
+                'temperature1': safe_float(values[11]) if len(values) > 11 else 0.0,
+                'altitude1': safe_float(values[12]) if len(values) > 12 else 0.0,
                 
-                # Pixhawk IMU data (3 fields: 13-15)
-                'abs_pressure2': float(values[13]) if values[13].strip() else 0.0,
-                'temperature2': float(values[14]) if values[14].strip() else 0.0,
-                'diff_pressure2': float(values[15]) if values[15].strip() else 0.0,
+                # Pixhawk IMU (13-15)
+                'abs_pressure2': safe_float(values[13]) if len(values) > 13 else 0.0,
+                'temperature2': safe_float(values[14]) if len(values) > 14 else 0.0,
+                'diff_pressure2': safe_float(values[15]) if len(values) > 15 else 0.0,
                 
-                # FC Status (2 fields: 16-17)
-                'sd_status': bool(int(values[16])) if values[16].strip() else False,
-                'actuator_status': bool(int(values[17])) if values[17].strip() else False,
+                # FC Status (16-17)
+                'sd_status': safe_bool(values[16]) if len(values) > 16 else False,
+                'actuator_status': safe_bool(values[17]) if len(values) > 17 else False,
                 
-                # Pixhawk Status (3 fields: 18-20)
-                'logging_active': bool(int(values[18])) if values[18].strip() else False,
-                'write_rate': int(values[19]) if values[19].strip() else 0,
-                'space_left': int(values[20]) if values[20].strip() else 0,
+                # Pixhawk Status (18-20)
+                'logging_active': safe_bool(values[18]) if len(values) > 18 else False,
+                'write_rate': safe_int(values[19]) if len(values) > 19 else 0,
+                'space_left': safe_int(values[20]) if len(values) > 20 else 0,
                 
-                # Pixhawk Time (2 fields: 21-22)
-                'pix_unix_time_usec': int(values[21]) if values[21].strip() else 0,
-                'pix_boot_time_ms': int(values[22]) if values[22].strip() else 0,
+                # Pixhawk Time (21-22) - note field 21 is empty
+                'pix_unix_time_usec': safe_int(values[21]) if len(values) > 21 else 0,  # Empty in format
+                'pix_boot_time_ms': safe_int(values[22]) if len(values) > 22 else 0,
                 
-                # Vibration data (6 fields: 23-28)
-                'vibe_x': float(values[23]) if values[23].strip() else 0.0,
-                'vibe_y': float(values[24]) if values[24].strip() else 0.0,
-                'vibe_z': float(values[25]) if values[25].strip() else 0.0,
-                'clip_x': int(values[26]) if values[26].strip() else 0,
-                'clip_y': int(values[27]) if values[27].strip() else 0,
-                'clip_z': int(values[28]) if values[28].strip() else 0,
+                # Navigation (29-30) - skipping vibration fields 23-28
+                'gps_bearing': safe_float(values[29]) if len(values) > 29 else 0.0,
+                'gps_bearing_magnetic': safe_float(values[30]) if len(values) > 30 else 0.0,
                 
-                # Navigation/GPS bearing data (6 fields: 29-34)
-                'gps_bearing': float(values[29]) if values[29].strip() else 0.0,
-                'gps_bearing_magnetic': float(values[30]) if values[30].strip() else 0.0,
-                'gps_bearing_true': float(values[31]) if values[31].strip() else 0.0,
-                'gps_bearing_ground_speed': float(values[32]) if values[32].strip() else 0.0,
-                'gps_bearing_ground_speed_magnetic': float(values[33]) if values[33].strip() else 0.0,
-                'gps_bearing_ground_speed_true': float(values[34]) if len(values) > 34 and values[34].strip() else 0.0,
+                # Photodiodes (35-36) - skipping unused fields 31-34
+                'photodiode_value1': safe_int(values[35]) if len(values) > 35 else 0,
+                'photodiode_value2': safe_int(values[36]) if len(values) > 36 else 0,
                 
-                # Photodiode data (2 fields: 35-36) - if available
-                'photodiode1': int(values[35]) if len(values) > 35 and values[35].strip() else 0,
-                'photodiode2': int(values[36]) if len(values) > 36 and values[36].strip() else 0,
+                # Battery voltages (37-38)
+                'fc_battery_voltage': safe_float(values[37]) if len(values) > 37 else 0.0,
+                'led_battery_voltage': safe_float(values[38]) if len(values) > 38 else 0.0,
                 
-                # Battery voltages - if available in future packets
-                'fc_battery_voltage': float(values[37]) if len(values) > 37 and values[37].strip() else 0.0,
-                'led_battery_voltage': float(values[38]) if len(values) > 38 and values[38].strip() else 0.0,
+                # Derived fields for compatibility
+                'gps_valid': safe_float(values[5]) != 0.0 and safe_float(values[6]) != 0.0 if len(values) > 6 else False,
+                'altitude': safe_float(values[7]) if len(values) > 7 else 0.0,  # Use GPS altitude
+                'pressure': safe_float(values[13]) if len(values) > 13 else 0.0,  # Use Pixhawk pressure
+                'temperature': safe_float(values[14]) if len(values) > 14 else 0.0,  # Use Pixhawk temperature
             }
             
-            # Update telemetry model with flight computer data
-            self.telemetry_model.update_flight_computer_telemetry(fc_data)
+            print(f"FC parsed: RSSI={fc_data['rssi']}, GPS=({fc_data['gps_lat']:.6f},{fc_data['gps_lon']:.6f}), Alt={fc_data['altitude']:.2f}")
+            
+            # Update telemetry model - use the generic update method
+            self.telemetry_model.update_telemetry(fc_data)
             
             # Emit GPS update signal if valid
-            if fc_data['gps_lat'] != 0 and fc_data['gps_lon'] != 0:
+            if fc_data['gps_valid']:
                 self.gps_updated.emit(
                     fc_data['gps_lat'],
                     fc_data['gps_lon'],
@@ -317,6 +424,9 @@ class TelemetryController(QObject):
             self.packet_parsed.emit(True, f"Flight computer telemetry received ({len(values)} fields)")
             return True
             
-        except (ValueError, IndexError) as e:
+        except Exception as e:
+            print(f"FC packet parse error: {str(e)}")
+            import traceback
+            traceback.print_exc()
             self.packet_parsed.emit(False, f"FC packet parse error: {str(e)}")
             return False

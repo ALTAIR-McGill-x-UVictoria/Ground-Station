@@ -1,0 +1,9 @@
+Event Log
+Started: 2025-07-02 19:29:50
+----------------------------------------
+
+[2025-07-02 19:29:50] Started logging to event_logs\event_log_2025-07-02_19-29-50.txt
+[2025-07-02 19:30:00] Status indicator 'sd_status' changed to: False
+[2025-07-02 19:30:00] Status indicator 'actuator_status' changed to: False
+[2025-07-02 19:30:06] [19:30:06.669] Sent: ping
+[2025-07-02 19:30:12] [19:30:12.704] Sent: ping
