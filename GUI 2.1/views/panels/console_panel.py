@@ -293,3 +293,24 @@ class ConsolePanel(QWidget):
             cursor = self.data_display.textCursor()
             cursor.movePosition(QTextCursor.End)
             self.data_display.setTextCursor(cursor)
+
+    def display_packet(self, packet_data):
+        """Display parsed telemetry packet data"""
+        try:
+            if isinstance(packet_data, dict):
+                timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
+                
+                # Format packet data nicely
+                packet_str = f"[{timestamp}] PACKET: "
+                key_values = []
+                for key, value in packet_data.items():
+                    if isinstance(value, float):
+                        key_values.append(f"{key}={value:.2f}")
+                    else:
+                        key_values.append(f"{key}={value}")
+                
+                packet_str += ", ".join(key_values)
+                self.log_to_console(packet_str, "#00aaff")  # Blue color for packets
+                
+        except Exception as e:
+            print(f"Error displaying packet: {e}")

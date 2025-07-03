@@ -73,6 +73,8 @@ class TelemetryModel(QObject):
         # Additional sensor data
         self.photodiode1 = 0
         self.photodiode2 = 0
+        self.photodiode_value1 = 0  # New field names from extended packet
+        self.photodiode_value2 = 0  # New field names from extended packet
         
         # Status fields
         self.led_status = False
@@ -205,6 +207,9 @@ class TelemetryModel(QObject):
         
         if 'gps_lat' in telemetry_data and 'gps_lon' in telemetry_data:
             self.position_updated.emit(self.gps_lat, self.gps_lon, self.gps_alt)
+        
+        # Emit packet received signal for table panel display
+        self.packet_received.emit(telemetry_data)
     
     def calculate_vertical_speed(self, current_altitude):
         """Calculate vertical speed based on altitude changes"""
