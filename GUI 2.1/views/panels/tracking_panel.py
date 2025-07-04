@@ -429,18 +429,13 @@ class TrackingPanel(QWidget):
             return False
     
     def generate_filename(self):
-        """Generate a unique filename for camera capture, indicating time source."""
-        # Use UTC time from ground station GPS if available, else system UTC
-        if hasattr(self.telemetry_model, 'gs_gps_utc_unix') and self.telemetry_model.gs_gps_utc_unix > 0:
-            current_time = QDateTime.fromSecsSinceEpoch(int(self.telemetry_model.gs_gps_utc_unix))
-            current_time.setTimeSpec(Qt.UTC)
-            time_source = "gps"
-        else:
-            current_time = QDateTime.currentDateTimeUtc()  
-            time_source = "sys"
+        """Generate a unique filename for camera capture"""
+        # current_time = QDateTime.currentDateTimeUtc()
+        current_time = gps_utc_time
         timestamp = current_time.toString("yyyyMMdd_hhmmss")
         self.image_counter += 1
-        filename = f"balloon_tracking_{timestamp}_{time_source}_{self.image_counter:04d}.tiff"
+        # Use .jpg extension for RGB images
+        filename = f"balloon_tracking_{timestamp}_{self.image_counter:04d}.tiff"
         return filename
     
     def create_status_section(self):
