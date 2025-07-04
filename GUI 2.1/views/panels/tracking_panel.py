@@ -436,11 +436,11 @@ class TrackingPanel(QWidget):
             current_time.setTimeSpec(Qt.UTC)
             time_source = "gps"
         else:
-            current_time = QDateTime.currentDateTimeUtc()
+            current_time = QDateTime.currentDateTimeUtc()  
             time_source = "sys"
         timestamp = current_time.toString("yyyyMMdd_hhmmss")
         self.image_counter += 1
-        filename = f"Photos/balloon_tracking_{timestamp}_{time_source}_{self.image_counter:04d}.tiff"
+        filename = f"balloon_tracking_{timestamp}_{time_source}_{self.image_counter:04d}.tiff"
         return filename
     
     def create_status_section(self):
