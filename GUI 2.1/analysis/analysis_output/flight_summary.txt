@@ -1,0 +1,79 @@
+FLIGHT LOG ANALYSIS SUMMARY
+==================================================
+
+BASIC STATISTICS
+--------------------
+Flight Duration: 4097.75 seconds
+Total FC Packets: 1695
+Valid GPS Points: 1695
+Start Time: 2025-07-03 22:10:41.580000
+
+GPS STATISTICS
+--------------------
+Max Altitude: 17182.20 m
+Min Altitude: 53.50 m
+Max Ground Speed: 260.12 m/s
+Average Ground Speed: 55.55 m/s
+Latitude Range: 45.741665 to 45.863232
+Longitude Range: -73.592918 to -72.950722
+
+ENVIRONMENTAL STATISTICS
+--------------------
+Temperature Range: -4.81°C to 39.56°C
+Pressure Range: 9055.25 to 100680.59 Pa
+Average Temperature: 25.68°C
+Average Pressure: 36906.28 Pa
+
+SIGNAL STATISTICS
+--------------------
+RSSI Range: -103 to -6 dBm
+SNR Range: -15 to 12 dB
+Average RSSI: -84.59 dBm
+Average SNR: -1.48 dB
+
+SYSTEM STATUS
+--------------------
+SD Card Status: 1695 true readings
+Actuator Status: 719 true readings
+LED Status: 1695 true readings
+Battery Voltage Range: 12.60V to 12.60V
+
+TERMINATION EVENTS
+--------------------
+Total Termination Events: 5
+Termination Events: 3
+De-termination Events: 2
+
+Event Details:
+  1. TERMINATION at 2025-07-03 22:46:34.157000
+     Location: (45.775307, -73.260147)
+     Altitude: 13512.68m
+     Time Elapsed: 2152.58s
+
+  2. DE-TERMINATION at 2025-07-03 22:47:31.148000
+     Location: (45.776123, -73.250076)
+     Altitude: 13765.80m
+     Time Elapsed: 2209.57s
+
+  3. TERMINATION at 2025-07-03 22:47:41.770000
+     Location: (45.776539, -73.248306)
+     Altitude: 13816.17m
+     Time Elapsed: 2220.19s
+
+  4. DE-TERMINATION at 2025-07-03 22:49:22.333000
+     Location: (45.780750, -73.228432)
+     Altitude: 14294.96m
+     Time Elapsed: 2320.75s
+
+  5. TERMINATION at 2025-07-03 22:49:29.980000
+     Location: (45.781048, -73.226807)
+     Altitude: 14332.06m
+     Time Elapsed: 2328.40s
+
+EVENT SUMMARY
+--------------------
+Total Events: 9
+Logging: 1 events
+SD Card Status: 1 events
+Actuator Status: 6 events
+Command Sent: 1 events
