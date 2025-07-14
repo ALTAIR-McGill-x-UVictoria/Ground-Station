@@ -5,7 +5,7 @@ from PyQt5.QtCore import QObject, pyqtSignal
 class MapController(QObject):
     """Controller for handling map interactions, including logic from gui.py"""
     
-    user_location_changed = pyqtSignal(float, float)  # lat, lon
+    user_location_changed = pyqtSignal(float, float, float)  # lat, lon, alt
     # bearing_calculated signal: (bearing_value, type_of_bearing)
     # type_of_bearing can be "vehicle_heading" or "target_bearing"
     bearing_calculated = pyqtSignal(float, str) 
@@ -14,14 +14,15 @@ class MapController(QObject):
         super().__init__()
         self.telemetry_model = telemetry_model
         self.settings_model = settings_model # For API keys or default locations
-        
+
         # Default user location (e.g., Montreal from gui.py, or from settings)
         self.user_lat = self.settings_model.get('map.default_user_lat', 45.5017)
         self.user_lon = self.settings_model.get('map.default_user_lon', -73.5673)
-        
+        self.user_alt = self.settings_model.get('map.default_user_alt', 30.0)  # Default altitude in meters
+
         self.last_vehicle_lat = None
         self.last_vehicle_lon = None
-        
+
         # Connect to model signals
         self.telemetry_model.position_updated.connect(self.handle_vehicle_position_update)
         self.telemetry_model.ground_station_gps_updated.connect(self.handle_ground_station_gps_update)
@@ -29,7 +30,7 @@ class MapController(QObject):
     def detect_user_location(self):
         """Detect user's location using IP geolocation (from gui.py)."""
         try:
-            # Try multiple geolocation services
+            # Try multiple geolocation servicesf
             services = [
                 'http://ip-api.com/json/',
                 'https://ipinfo.io/json',
@@ -48,22 +49,26 @@ class MapController(QObject):
                     if 'ip-api.com' in service_url:
                         lat = float(data.get('lat', self.user_lat))
                         lon = float(data.get('lon', self.user_lon))
+                        alt = float(data.get('alt', self.user_alt))
                     elif 'ipinfo.io' in service_url:
                         loc = data.get('loc', '').split(',')
                         if len(loc) == 2:
                             lat = float(loc[0])
                             lon = float(loc[1])
+                            alt = self.user_alt  # No altitude info from ipinfo.io
                         else:
                             continue
                     else:  # ipapi.co
                         lat = float(data.get('latitude', self.user_lat))
                         lon = float(data.get('longitude', self.user_lon))
+                        alt = float(data.get('altitude', self.user_alt))
                     
-                    if lat != self.user_lat or lon != self.user_lon:
+                    if lat != self.user_lat or lon != self.user_lon or alt != self.user_alt:
                         self.user_lat = lat
                         self.user_lon = lon
-                        self.user_location_changed.emit(self.user_lat, self.user_lon)
-                        print(f"MapController: User location detected via {service_url}: {self.user_lat}, {self.user_lon}")
+                        self.user_alt = alt
+                        self.user_location_changed.emit(self.user_lat, self.user_lon, self.user_alt)
+                        print(f"MapController: User location detected via {service_url}: {self.user_lat}, {self.user_lon}, {self.user_alt}")
                     return True
                     
                 except requests.exceptions.RequestException as e:
@@ -75,21 +80,22 @@ class MapController(QObject):
             
             # If all services failed, emit current location anyway
             print("MapController: All geolocation services failed. Using default location.")
-            self.user_location_changed.emit(self.user_lat, self.user_lon)
+            self.user_location_changed.emit(self.user_lat, self.user_lon, self.user_alt)
             return False
             
         except Exception as e:
             print(f"MapController: Unexpected error in detect_user_location: {e}")
-            self.user_location_changed.emit(self.user_lat, self.user_lon)
+            self.user_location_changed.emit(self.user_lat, self.user_lon, self.user_alt)
             return False
 
-    def set_user_location(self, lat, lon):
+    def set_user_location(self, lat, lon, alt):
         """Manually set user's location."""
-        if self.user_lat != lat or self.user_lon != lon:
+        if self.user_lat != lat or self.user_lon != lon or self.user_alt != alt:
             self.user_lat = lat
             self.user_lon = lon
-            self.user_location_changed.emit(lat, lon)
-            print(f"MapController: User location set manually: {lat}, {lon}")
+            self.user_alt = alt
+            self.user_location_changed.emit(lat, lon, alt)
+            print(f"MapController: User location set manually: {lat}, {lon}, {alt}")
             # Recalculate bearings if vehicle position is known
             if self.last_vehicle_lat is not None and self.last_vehicle_lon is not None:
                 self.calculate_target_bearing_to_vehicle(self.last_vehicle_lat, self.last_vehicle_lon)
@@ -121,18 +127,19 @@ class MapController(QObject):
     def handle_ground_station_gps_update(self, gs_lat, gs_lon, gs_alt):
         """Called when ground station GPS data is received from GS packets."""
         print(f"MapController: Ground station GPS received: {gs_lat:.6f}, {gs_lon:.6f}, alt={gs_alt:.1f}m")
-        
+
         # Update the user location with the ground station's actual GPS position
         if gs_lat != 0 and gs_lon != 0:  # Valid GPS coordinates
-            if self.user_lat != gs_lat or self.user_lon != gs_lon:
+            if self.user_lat != gs_lat or self.user_lon != gs_lon or self.user_alt != gs_alt:
                 self.user_lat = gs_lat
                 self.user_lon = gs_lon
-                
+                self.user_alt = gs_alt
+
                 # Use QTimer to delay the emission slightly to ensure map is ready
                 from PyQt5.QtCore import QTimer
-                QTimer.singleShot(100, lambda: self.user_location_changed.emit(gs_lat, gs_lon))
-                print(f"MapController: Ground station location updated from GPS data: {gs_lat:.6f}, {gs_lon:.6f}")
-                
+                QTimer.singleShot(100, lambda: self.user_location_changed.emit(gs_lat, gs_lon, gs_alt))
+                print(f"MapController: Ground station location updated from GPS data: {gs_lat:.6f}, {gs_lon:.6f}, {gs_alt:.1f}m")
+
                 # Recalculate bearings if vehicle position is known
                 if self.last_vehicle_lat is not None and self.last_vehicle_lon is not None:
                     self.calculate_target_bearing_to_vehicle(self.last_vehicle_lat, self.last_vehicle_lon)

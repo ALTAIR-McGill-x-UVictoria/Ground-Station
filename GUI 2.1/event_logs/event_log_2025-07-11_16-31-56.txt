@@ -1,0 +1,7 @@
+Event Log
+Started: 2025-07-11 16:31:56
+----------------------------------------
+
+[2025-07-11 16:31:56] Started logging to event_logs\event_log_2025-07-11_16-31-56.txt
+[2025-07-11 16:32:01] Status indicator 'sd_status' changed to: True
+[2025-07-11 16:32:01] Status indicator 'actuator_status' changed to: False

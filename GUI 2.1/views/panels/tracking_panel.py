@@ -12,7 +12,10 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 import os
 import sys
-
+from controllers.telescope_controller import TelescopeController
+from astropy.coordinates import SkyCoord, EarthLocation, AltAz
+from astropy.time import Time
+import astropy.units as u
 from views.widgets.compass_widget import CompassWidget
 
 # Import ZWO camera functionality
@@ -220,6 +223,37 @@ class StatusIndicator(QFrame):
 
 
 class TrackingPanel(QWidget):
+    def log_tracking_data(self):
+        """Log all tracking panel data to a separate file"""
+        import datetime
+        log_dir = os.path.join(os.path.dirname(__file__), '../../logs')
+        os.makedirs(log_dir, exist_ok=True)
+        log_file = os.path.join(log_dir, 'tracking_panel_log.txt')
+        now = datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+        data = {
+            'timestamp_utc': now,
+            'balloon_lat': self.balloon_lat,
+            'balloon_lon': self.balloon_lon,
+            'balloon_alt': self.balloon_alt,
+            'ground_lat': self.ground_lat,
+            'ground_lon': self.ground_lon,
+            'ground_alt': self.ground_alt,
+            'bearing': self.bearing,
+            'elevation': self.elevation,
+            'distance': self.distance,
+        }
+        # Add celestial coordinates if available
+        try:
+            ra, dec = self.calculate_celestial_coordinates()
+            data['ra'] = ra.to_string(unit=u.hour, sep=':')
+            data['dec'] = dec.to_string(unit=u.deg, sep=':')
+        except Exception as e:
+            data['ra'] = 'N/A'
+            data['dec'] = 'N/A'
+        # Write as a single line (CSV style)
+        with open(log_file, 'a') as f:
+            f.write(','.join(f'{k}={v}' for k, v in data.items()) + '\n')
+
     """Panel for balloon tracking visualization and ground station operations"""
     
     def __init__(self, telemetry_model, map_controller, parent=None):
@@ -233,6 +267,7 @@ class TrackingPanel(QWidget):
         self.balloon_alt = 0.0
         self.ground_lat = 0.0
         self.ground_lon = 0.0
+        self.ground_alt = 0.0
         self.bearing = 0.0
         self.elevation = 0.0
         self.distance = 0.0
@@ -264,7 +299,10 @@ class TrackingPanel(QWidget):
         self.led_plot_timer = QTimer()
         self.led_plot_timer.timeout.connect(self.update_led_timing_plot)
         self.led_plot_timer.start(100)  # Update plot every 100ms for smooth animation
-    
+
+        # Mount Controller
+        self.telescope_controller = TelescopeController()
+        
     def setup_ui(self):
         main_layout = QVBoxLayout(self)
         main_layout.setSpacing(8)
@@ -291,7 +329,7 @@ class TrackingPanel(QWidget):
         # No stretch - let components fill available space
     
     def create_tracking_section(self):
-        """Create the tracking information section"""
+        """Create the tracking information section, including manual ground station entry"""
         group = QGroupBox("Balloon Tracking")
         group.setStyleSheet("""
             QGroupBox {
@@ -309,11 +347,11 @@ class TrackingPanel(QWidget):
                 padding: 0 5px;
             }
         """)
-        
+
         layout = QGridLayout(group)
         layout.setSpacing(8)
         layout.setContentsMargins(8, 8, 8, 8)
-        
+
         # Compass for bearing (make it more compact)
         compass_frame = QFrame()
         compass_frame.setFrameStyle(QFrame.Box | QFrame.Raised)
@@ -327,25 +365,25 @@ class TrackingPanel(QWidget):
         compass_layout = QVBoxLayout(compass_frame)
         compass_layout.setSpacing(2)  # Tighter spacing
         compass_layout.setContentsMargins(6, 6, 6, 6)  # Smaller margins
-        
+
         compass_label = QLabel("Bearing to Balloon")
         compass_label.setAlignment(Qt.AlignCenter)
         compass_label.setFont(QFont("Arial", 9, QFont.Bold))  # Smaller font
         compass_label.setStyleSheet("color: #ffffff; margin: 1px;")  # Less margin
         compass_layout.addWidget(compass_label)
-        
+
         self.bearing_compass = CompassWidget()
         self.bearing_compass.setFixedSize(100, 100)  # Smaller compass (was 120x120)
         compass_layout.addWidget(self.bearing_compass, 0, Qt.AlignCenter)
-        
+
         self.bearing_label = QLabel("---°")
         self.bearing_label.setAlignment(Qt.AlignCenter)
         self.bearing_label.setFont(QFont("Arial", 11, QFont.Bold))  # Slightly smaller font
         self.bearing_label.setStyleSheet("color: #00ff00; margin: 1px;")  # Less margin
         compass_layout.addWidget(self.bearing_label)
-        
+
         layout.addWidget(compass_frame, 0, 0, 2, 1)
-        
+
         # Tracking parameters (more compact)
         params_frame = QFrame()
         params_frame.setFrameStyle(QFrame.Box | QFrame.Raised)
@@ -360,25 +398,124 @@ class TrackingPanel(QWidget):
         params_layout = QGridLayout(params_frame)
         params_layout.setSpacing(4)
         params_layout.setContentsMargins(6, 6, 6, 6)
-        
+
         # Balloon altitude
         self.add_parameter_display(params_layout, "Balloon Altitude:", "altitude_label", "--- m", 0)
-        
+
         # Elevation angle
         self.add_parameter_display(params_layout, "Elevation Angle:", "elevation_label", "---°", 1)
-        
+
         # Distance
         self.add_parameter_display(params_layout, "Distance:", "distance_label", "--- km", 2)
-        
+
         # Right Ascension
         self.add_parameter_display(params_layout, "Right Ascension:", "ra_label", "---h ---m", 3)
-        
+
         # Declination
         self.add_parameter_display(params_layout, "Declination:", "dec_label", "---° ---'", 4)
-        
+
         layout.addWidget(params_frame, 0, 1)
-        
+
+        # Manual ground station entry section
+        manual_frame = QFrame()
+        manual_frame.setFrameStyle(QFrame.Box | QFrame.Raised)
+        manual_frame.setStyleSheet("""
+            QFrame {
+                border: 1px solid #3a3a3a;
+                border-radius: 4px;
+                background-color: #232323;
+                padding: 6px;
+            }
+        """)
+        manual_layout = QGridLayout(manual_frame)
+        manual_layout.setSpacing(4)
+        manual_layout.setContentsMargins(6, 6, 6, 6)
+
+        manual_label = QLabel("Manual Ground Station Coordinates")
+        manual_label.setFont(QFont("Arial", 9, QFont.Bold))
+        manual_label.setStyleSheet("color: #00ff00;")
+        manual_layout.addWidget(manual_label, 0, 0, 1, 3)
+
+        # Latitude
+        lat_label = QLabel("Lat:")
+        lat_label.setFont(QFont("Arial", 8))
+        lat_label.setStyleSheet("color: #ffffff;")
+        manual_layout.addWidget(lat_label, 1, 0)
+        self.manual_lat_spin = QDoubleSpinBox()
+        self.manual_lat_spin.setRange(-90.0, 90.0)
+        self.manual_lat_spin.setDecimals(6)
+        self.manual_lat_spin.setSingleStep(0.0001)
+        self.manual_lat_spin.setValue(self.ground_lat)
+        self.manual_lat_spin.setStyleSheet("background-color: #2a2a2a; color: #ffffff; border: 1px solid #3a3a3a; border-radius: 2px; min-width: 80px;")
+        manual_layout.addWidget(self.manual_lat_spin, 1, 1)
+
+        # Longitude
+        lon_label = QLabel("Lon:")
+        lon_label.setFont(QFont("Arial", 8))
+        lon_label.setStyleSheet("color: #ffffff;")
+        manual_layout.addWidget(lon_label, 2, 0)
+        self.manual_lon_spin = QDoubleSpinBox()
+        self.manual_lon_spin.setRange(-180.0, 180.0)
+        self.manual_lon_spin.setDecimals(6)
+        self.manual_lon_spin.setSingleStep(0.0001)
+        self.manual_lon_spin.setValue(self.ground_lon)
+        self.manual_lon_spin.setStyleSheet("background-color: #2a2a2a; color: #ffffff; border: 1px solid #3a3a3a; border-radius: 2px; min-width: 80px;")
+        manual_layout.addWidget(self.manual_lon_spin, 2, 1)
+
+        # Altitude
+        alt_label = QLabel("Alt (m):")
+        alt_label.setFont(QFont("Arial", 8))
+        alt_label.setStyleSheet("color: #ffffff;")
+        manual_layout.addWidget(alt_label, 3, 0)
+        self.manual_alt_spin = QDoubleSpinBox()
+        self.manual_alt_spin.setRange(-500.0, 9000.0)
+        self.manual_alt_spin.setDecimals(2)
+        self.manual_alt_spin.setSingleStep(0.1)
+        self.manual_alt_spin.setValue(self.ground_alt)
+        self.manual_alt_spin.setStyleSheet("background-color: #2a2a2a; color: #ffffff; border: 1px solid #3a3a3a; border-radius: 2px; min-width: 80px;")
+        manual_layout.addWidget(self.manual_alt_spin, 3, 1)
+
+        # Apply button
+        self.manual_apply_btn = QPushButton("Apply")
+        self.manual_apply_btn.setStyleSheet("""
+            QPushButton {
+                background-color: #3a3a3a;
+                color: #ffffff;
+                border: 1px solid #555555;
+                border-radius: 4px;
+                padding: 4px 10px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #4a4a4a;
+            }
+            QPushButton:pressed {
+                background-color: #2a2a2a;
+            }
+        """)
+        manual_layout.addWidget(self.manual_apply_btn, 4, 0, 1, 2)
+
+        # Add manual entry frame to layout (below params)
+        layout.addWidget(manual_frame, 2, 0, 1, 2)
+
+        # Connect apply button
+        self.manual_apply_btn.clicked.connect(self.apply_manual_ground_station)
+
         return group
+    def apply_manual_ground_station(self):
+        """Apply manual ground station coordinates from user input"""
+        lat = self.manual_lat_spin.value()
+        lon = self.manual_lon_spin.value()
+        alt = self.manual_alt_spin.value()
+        print(f"Manual ground station set: lat={lat}, lon={lon}, alt={alt}")
+        self.ground_lat = lat
+        self.ground_lon = lon
+        self.ground_alt = alt
+        self.calculate_tracking_parameters()
+        # Optionally, emit a signal or update map_controller if needed
+        # If you want to propagate this to the map_controller, you could do:
+        # self.map_controller.set_user_location(lat, lon, alt)
+        # But only if such a method exists and is appropriate
     
     def update_camera_gain(self, value):
         """Update camera gain setting"""
@@ -692,36 +829,38 @@ class TrackingPanel(QWidget):
         """Update ground station position from GPS"""
         self.ground_lat = lat
         self.ground_lon = lon
+        self.ground_alt = alt
         self.calculate_tracking_parameters()
     
-    def update_ground_position_from_controller(self, lat, lon):
+    def update_ground_position_from_controller(self, lat, lon, alt):
         """Update ground station position from map controller"""
         self.ground_lat = lat
         self.ground_lon = lon
+        self.ground_alt = alt
         self.calculate_tracking_parameters()
     
     def calculate_tracking_parameters(self):
         """Calculate bearing, elevation, distance, and celestial coordinates"""
         if self.ground_lat == 0 or self.ground_lon == 0 or self.balloon_lat == 0 or self.balloon_lon == 0:
             return
-        
+
         # Calculate bearing
         self.bearing = self.calculate_bearing(self.ground_lat, self.ground_lon, 
                                             self.balloon_lat, self.balloon_lon)
-        
+
         # Calculate distance
         self.distance = self.calculate_distance(self.ground_lat, self.ground_lon,
                                               self.balloon_lat, self.balloon_lon)
-        
+
         # Calculate elevation angle
         if self.distance > 0:
             # Convert distance to meters and calculate elevation
             distance_m = self.distance * 1000
-            height_diff = self.balloon_alt  # Assuming ground station at sea level
+            height_diff = self.balloon_alt - self.ground_alt  # Altitude relative to user
             self.elevation = math.degrees(math.atan2(height_diff, distance_m))
         else:
             self.elevation = 0
-        
+
         # Update compass
         self.bearing_compass.setBearing(self.bearing)
     
@@ -757,40 +896,52 @@ class TrackingPanel(QWidget):
         
         return R * c
     
+
     def calculate_celestial_coordinates(self):
-        """Calculate right ascension and declination (simplified)"""
-        # This is a simplified calculation - for accurate celestial coordinates,
-        # you would need proper astronomical calculations including time, location, etc.
-        
-        # For now, we'll convert the bearing and elevation to approximate celestial coordinates
-        # This is NOT astronomically accurate but provides placeholder values
-        
-        # Convert bearing to RA (very rough approximation)
-        ra_hours = self.bearing / 15.0  # 360° / 24h = 15°/h
-        ra_h = int(ra_hours)
-        ra_m = int((ra_hours - ra_h) * 60)
-        
-        # Use elevation as declination approximation
-        dec_deg = int(self.elevation)
-        dec_min = int((self.elevation - dec_deg) * 60)
-        
-        return ra_h, ra_m, dec_deg, dec_min
+        """Calculate right ascension and declination using astropy"""
+        # Observer location (your ground station)
+        observer = EarthLocation(lat=self.ground_lat*u.deg, lon=self.ground_lon*u.deg, height=self.ground_alt*u.m)
+
+        # Time (should be from GPS ideally)
+        gps_utc = self.get_current_utc_time().toPyDateTime()
+        time = Time(gps_utc)
+
+        # Balloon's position as seen from observer
+        balloon_altaz = SkyCoord(
+            az=self.bearing*u.deg,
+            alt=self.elevation*u.deg,
+            frame=AltAz(location=observer, obstime=time)
+        )
+
+        # Convert to RA/DEC (Equatorial coordinates)
+        sky_coord = balloon_altaz.transform_to('icrs')  # ICRS = RA/DEC J2000 frame
+
+        ra = sky_coord.ra
+        dec = sky_coord.dec
+
+        print(f"RA: {ra.to_string(unit=u.hour)}")
+        print(f"DEC: {dec.to_string(unit=u.deg)}")
+
+        return ra, dec
     
     def update_displays(self):
         """Update all display elements"""
         # Update bearing display
         self.bearing_label.setText(f"{self.bearing:.1f}°")
-        
+
         # Update tracking parameters
         self.altitude_label.setText(f"{self.balloon_alt:.1f} m")
         self.elevation_label.setText(f"{self.elevation:.1f}°")
         self.distance_label.setText(f"{self.distance:.2f} km")
-        
-        # Calculate and update celestial coordinates
-        ra_h, ra_m, dec_deg, dec_min = self.calculate_celestial_coordinates()
-        self.ra_label.setText(f"{ra_h:02d}h {ra_m:02d}m")
-        self.dec_label.setText(f"{dec_deg:+03d}° {abs(dec_min):02d}'")
-        
+
+        # Calculate and update celestial coordinates using astropy
+        ra, dec = self.calculate_celestial_coordinates()
+        self.ra_label.setText(ra.to_string(unit=u.hour, sep=':'))
+        self.dec_label.setText(dec.to_string(unit=u.deg, sep=':'))
+
+        # Log tracking data
+        self.log_tracking_data()
+
         # Update UTC time from ground station GPS if available
         if hasattr(self.telemetry_model, 'gs_gps_utc_unix') and self.telemetry_model.gs_gps_utc_unix > 0:
             # Use ground station GPS UTC time
@@ -798,11 +949,11 @@ class TrackingPanel(QWidget):
             gps_utc_time.setTimeSpec(Qt.UTC)
             self.utc_time_label.setText(gps_utc_time.toString("hh:mm:ss"))
             self.utc_date_label.setText(gps_utc_time.toString("yyyy/MM/dd"))
-            
+
             # Update source indicator
             self.time_source_label.setText("GPS")
             self.time_source_label.setStyleSheet("color: #00ff00; margin-top: 5px;")
-            
+
             # Add GPS indicator to show source
             self.utc_time_label.setToolTip("UTC time from Ground Station GPS")
             self.utc_date_label.setToolTip("UTC date from Ground Station GPS")
@@ -811,21 +962,25 @@ class TrackingPanel(QWidget):
             utc_now = QDateTime.currentDateTimeUtc()
             self.utc_time_label.setText(utc_now.toString("hh:mm:ss"))
             self.utc_date_label.setText(utc_now.toString("yyyy/MM/dd"))
-            
+
             # Update source indicator
             self.time_source_label.setText("System")
             self.time_source_label.setStyleSheet("color: #888888; margin-top: 5px;")
-            
+
             # Add indicator to show source
             self.utc_time_label.setToolTip("UTC time from System Clock (GPS not available)")
             self.utc_date_label.setToolTip("UTC date from System Clock (GPS not available)")
-        
+
         # Update status indicators based on telemetry
         self.update_status_indicators()
-        
+
         # Update LED status based on UTC time (after other status updates)
         self.update_led_status()
-    
+
+        # Slew the telescope mount to the calculated RA/DEC
+        # Convert RA to hours as float, DEC to degrees as float
+        self.telescope_controller.slew_to(ra.hour, dec.degree)
+
     def update_status_indicators(self):
         """Update status indicators based on system state"""
         print("DEBUG: Updating status indicators...")
@@ -1102,3 +1257,4 @@ class TrackingPanel(QWidget):
             camera_status_color = "#00ff00" if CAMERA_AVAILABLE else "#ff0000"
             self.camera_status_label.setText(camera_status_text)
             self.camera_status_label.setStyleSheet(f"color: {camera_status_color}; margin-bottom: 6px;")
+    
