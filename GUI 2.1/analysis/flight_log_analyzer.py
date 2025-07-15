@@ -83,6 +83,10 @@ class FlightLogAnalyzer:
         self.flight_data = pd.DataFrame(fc_packets) if fc_packets else pd.DataFrame()
         self.gs_data = pd.DataFrame(gs_packets) if gs_packets else pd.DataFrame()
         
+        # Calculate vertical speed if we have flight data
+        if not self.flight_data.empty:
+            self._calculate_vertical_speed()
+        
         print(f"Parsed {len(fc_packets)} FC packets and {len(gs_packets)} GS packets")
         
         return self.flight_data
@@ -305,23 +309,56 @@ class FlightLogAnalyzer:
         # Set up the plotting style
         plt.style.use('seaborn-v0_8' if 'seaborn-v0_8' in plt.style.available else 'default')
         
-        # Plot 1: GPS Altitude and Ground Speed
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10))
+        # Plot 1: GPS Altitude, Ground Speed, Vertical Speed, and Total Speed
+        fig, (ax1, ax2, ax3, ax4) = plt.subplots(4, 1, figsize=(12, 16))
         
         valid_data = self.flight_data[self.flight_data['gps_valid'] == True]
         
-        ax1.plot(valid_data['time_elapsed'], valid_data['gps_alt'], 'b-', linewidth=2, label='GPS Altitude')
+        # Calculate vertical speed on the fly for valid data
+        valid_data = valid_data.copy()
+        valid_data['vertical_speed'] = 0.0
+        
+        for i in range(1, len(valid_data)):
+            current_row = valid_data.iloc[i]
+            previous_row = valid_data.iloc[i-1]
+            
+            time_diff = current_row['time_elapsed'] - previous_row['time_elapsed']
+            if time_diff > 0:
+                alt_diff = current_row['gps_alt'] - previous_row['gps_alt']
+                valid_data.iloc[i, valid_data.columns.get_loc('vertical_speed')] = alt_diff / time_diff
+        
+        # Calculate total speed (magnitude of ground speed and vertical speed vector)
+        valid_data['total_speed'] = np.sqrt(valid_data['ground_speed']**2 + valid_data['vertical_speed']**2)
+        
+        ax1.plot(valid_data['time_elapsed_minutes'], valid_data['gps_alt'], 'b-', linewidth=2, label='GPS Altitude')
         ax1.set_ylabel('Altitude (m)')
         ax1.set_title('Flight Altitude Over Time')
         ax1.grid(True, alpha=0.3)
         ax1.legend()
         
-        ax2.plot(valid_data['time_elapsed'], valid_data['ground_speed'], 'g-', linewidth=2, label='Ground Speed')
-        ax2.set_ylabel('Speed (m/s)')
-        ax2.set_xlabel('Time (seconds)')
+        ax2.plot(valid_data['time_elapsed_minutes'], valid_data['ground_speed'], 'g-', linewidth=2, label='Ground Speed')
+        ax2.set_ylabel('Ground Speed (m/s)')
         ax2.set_title('Ground Speed Over Time')
         ax2.grid(True, alpha=0.3)
         ax2.legend()
+        
+        # Add vertical speed plot
+        ax3.plot(valid_data['time_elapsed_minutes'], valid_data['vertical_speed'], 'r-', linewidth=2, label='Vertical Speed')
+        ax3.axhline(y=0, color='k', linestyle='--', alpha=0.5)  # Reference line at 0
+        ax3.set_ylabel('Vertical Speed (m/s)')
+        ax3.set_title('Vertical Speed Over Time (Positive = Ascending, Negative = Descending)')
+        ax3.grid(True, alpha=0.3)
+        ax3.legend()
+        
+        # Add total speed plot (magnitude of horizontal and vertical velocity vector)
+        ax4.plot(valid_data['time_elapsed_minutes'], valid_data['total_speed'], 'purple', linewidth=2, label='Total Speed')
+        ax4.plot(valid_data['time_elapsed_minutes'], valid_data['ground_speed'], 'g--', linewidth=1, alpha=0.7, label='Ground Speed (reference)')
+        ax4.plot(valid_data['time_elapsed_minutes'], np.abs(valid_data['vertical_speed']), 'r--', linewidth=1, alpha=0.7, label='|Vertical Speed| (reference)')
+        ax4.set_ylabel('Total Speed (m/s)')
+        ax4.set_xlabel('Time (minutes)')
+        ax4.set_title('Total Speed Over Time (√(Ground Speed² + Vertical Speed²))')
+        ax4.grid(True, alpha=0.3)
+        ax4.legend()
         
         plt.tight_layout()
         plt.savefig(os.path.join(output_dir, 'altitude_speed.png'), dpi=300, bbox_inches='tight')
@@ -330,19 +367,19 @@ class FlightLogAnalyzer:
         # Plot 2: Environmental Data
         fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12, 12))
         
-        ax1.plot(self.flight_data['time_elapsed'], self.flight_data['temperature'], 'r-', linewidth=2)
+        ax1.plot(self.flight_data['time_elapsed_minutes'], self.flight_data['temperature'], 'r-', linewidth=2)
         ax1.set_ylabel('Temperature (°C)')
         ax1.set_title('Temperature Over Time')
         ax1.grid(True, alpha=0.3)
         
-        ax2.plot(self.flight_data['time_elapsed'], self.flight_data['pressure'], 'b-', linewidth=2)
-        ax2.set_ylabel('Pressure (Pa)')
+        ax2.plot(self.flight_data['time_elapsed_minutes'], self.flight_data['pressure_kpa'], 'b-', linewidth=2)
+        ax2.set_ylabel('Pressure (kPa)')
         ax2.set_title('Pressure Over Time')
         ax2.grid(True, alpha=0.3)
         
-        ax3.plot(self.flight_data['time_elapsed'], self.flight_data['diff_pressure2'], 'g-', linewidth=2)
-        ax3.set_ylabel('Differential Pressure (Pa)')
-        ax3.set_xlabel('Time (seconds)')
+        ax3.plot(self.flight_data['time_elapsed_minutes'], self.flight_data['diff_pressure2_kpa'], 'g-', linewidth=2)
+        ax3.set_ylabel('Differential Pressure (kPa)')
+        ax3.set_xlabel('Time (minutes)')
         ax3.set_title('Differential Pressure Over Time')
         ax3.grid(True, alpha=0.3)
         
@@ -353,15 +390,15 @@ class FlightLogAnalyzer:
         # Plot 3: Signal Strength
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8))
         
-        ax1.plot(self.flight_data['time_elapsed'], self.flight_data['rssi'], 'r-', linewidth=2, label='RSSI')
+        ax1.plot(self.flight_data['time_elapsed_minutes'], self.flight_data['rssi'], 'r-', linewidth=2, label='RSSI')
         ax1.set_ylabel('RSSI (dBm)')
         ax1.set_title('Signal Strength Over Time')
         ax1.grid(True, alpha=0.3)
         ax1.legend()
         
-        ax2.plot(self.flight_data['time_elapsed'], self.flight_data['snr'], 'b-', linewidth=2, label='SNR')
+        ax2.plot(self.flight_data['time_elapsed_minutes'], self.flight_data['snr'], 'b-', linewidth=2, label='SNR')
         ax2.set_ylabel('SNR (dB)')
-        ax2.set_xlabel('Time (seconds)')
+        ax2.set_xlabel('Time (minutes)')
         ax2.set_title('Signal-to-Noise Ratio Over Time')
         ax2.grid(True, alpha=0.3)
         ax2.legend()
@@ -374,18 +411,18 @@ class FlightLogAnalyzer:
         fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8))
         
         # Battery voltages
-        ax1.plot(self.flight_data['time_elapsed'], self.flight_data['fc_battery_voltage'], 'r-', linewidth=2, label='FC Battery')
-        ax1.plot(self.flight_data['time_elapsed'], self.flight_data['led_battery_voltage'], 'b-', linewidth=2, label='LED Battery')
+        ax1.plot(self.flight_data['time_elapsed_minutes'], self.flight_data['fc_battery_voltage'], 'r-', linewidth=2, label='FC Battery')
+        ax1.plot(self.flight_data['time_elapsed_minutes'], self.flight_data['led_battery_voltage'], 'b-', linewidth=2, label='LED Battery')
         ax1.set_ylabel('Voltage (V)')
         ax1.set_title('Battery Voltages Over Time')
         ax1.grid(True, alpha=0.3)
         ax1.legend()
         
         # Photodiode values
-        ax2.plot(self.flight_data['time_elapsed'], self.flight_data['photodiode_value1'], 'g-', linewidth=2, label='Photodiode 1')
-        ax2.plot(self.flight_data['time_elapsed'], self.flight_data['photodiode_value2'], 'orange', linewidth=2, label='Photodiode 2')
+        ax2.plot(self.flight_data['time_elapsed_minutes'], self.flight_data['photodiode_value1'], 'g-', linewidth=2, label='Photodiode 1')
+        ax2.plot(self.flight_data['time_elapsed_minutes'], self.flight_data['photodiode_value2'], 'orange', linewidth=2, label='Photodiode 2')
         ax2.set_ylabel('Photodiode Value')
-        ax2.set_xlabel('Time (seconds)')
+        ax2.set_xlabel('Time (minutes)')
         ax2.set_title('Photodiode Values Over Time')
         ax2.grid(True, alpha=0.3)
         ax2.legend()
@@ -419,7 +456,7 @@ class FlightLogAnalyzer:
         fig, ax = plt.subplots(1, 1, figsize=(12, 6))
         
         # Plot actuator status over time
-        ax.plot(self.flight_data['time_elapsed'], self.flight_data['actuator_status'].astype(int), 
+        ax.plot(self.flight_data['time_elapsed_minutes'], self.flight_data['actuator_status'].astype(int), 
                 'r-', linewidth=2, label='Actuator Status')
         
         # Mark termination events
@@ -427,12 +464,12 @@ class FlightLogAnalyzer:
         for event in termination_events:
             color = 'red' if event['event_type'] == 'TERMINATION' else 'green'
             marker = '^' if event['event_type'] == 'TERMINATION' else 'v'
-            ax.scatter(event['time_elapsed'], 1 if event['actuator_status'] else 0, 
+            ax.scatter(event['time_elapsed'] / 60.0, 1 if event['actuator_status'] else 0, 
                       c=color, marker=marker, s=100, 
                       label=f"{event['event_type']} ({event['timestamp'].strftime('%H:%M:%S')})")
         
         ax.set_ylabel('Actuator Status')
-        ax.set_xlabel('Time (seconds)')
+        ax.set_xlabel('Time (minutes)')
         ax.set_title('Actuator Status and Termination Events Over Time')
         ax.set_ylim(-0.1, 1.1)
         ax.set_yticks([0, 1])
@@ -526,20 +563,82 @@ class FlightLogAnalyzer:
             # Basic statistics
             f.write("BASIC STATISTICS\n")
             f.write("-" * 20 + "\n")
-            f.write(f"Flight Duration: {self.flight_data['time_elapsed'].max():.2f} seconds\n")
+            f.write(f"Flight Duration: {self.flight_data['time_elapsed'].max():.2f} seconds ({self.flight_data['time_elapsed_minutes'].max():.2f} minutes)\n")
             f.write(f"Total FC Packets: {len(self.flight_data)}\n")
             f.write(f"Valid GPS Points: {len(self.flight_data[self.flight_data['gps_valid'] == True])}\n")
             f.write(f"Start Time: {self.start_time}\n\n")
             
+            # Flight phases
+            flight_phases = self.detect_flight_phases()
+            if flight_phases:
+                f.write("FLIGHT PHASES\n")
+                f.write("-" * 20 + "\n")
+                
+                if 'release' in flight_phases:
+                    release = flight_phases['release']
+                    f.write(f"Balloon Release Time (UTC): {release['utc_time']}\n")
+                    f.write(f"Release Altitude: {release['altitude']:.2f}m\n")
+                    f.write(f"Release Location: ({release['gps_lat']:.6f}, {release['gps_lon']:.6f})\n\n")
+                
+                if 'apogee' in flight_phases:
+                    apogee = flight_phases['apogee']
+                    f.write(f"Apogee Time (UTC): {apogee['utc_time']}\n")
+                    f.write(f"Apogee Altitude: {apogee['altitude']:.2f}m\n")
+                    f.write(f"Apogee Location: ({apogee['gps_lat']:.6f}, {apogee['gps_lon']:.6f})\n\n")
+                
+                if 'landing' in flight_phases:
+                    landing = flight_phases['landing']
+                    f.write(f"Landing Time (UTC): {landing['utc_time']}\n")
+                    f.write(f"Landing Altitude: {landing['altitude']:.2f}m\n")
+                    f.write(f"Landing Location: ({landing['gps_lat']:.6f}, {landing['gps_lon']:.6f})\n\n")
+                
+                if 'durations' in flight_phases:
+                    durations = flight_phases['durations']
+                    f.write(f"Ascent Duration: {durations['ascent']:.2f} seconds ({durations['ascent']/60:.2f} minutes)\n")
+                    f.write(f"Descent Duration: {durations['descent']:.2f} seconds ({durations['descent']/60:.2f} minutes)\n")
+                    f.write(f"Total Flight Duration: {durations['total']:.2f} seconds ({durations['total']/60:.2f} minutes)\n\n")
+            else:
+                f.write("FLIGHT PHASES\n")
+                f.write("-" * 20 + "\n")
+                f.write("Unable to detect flight phases\n\n")
+            
             # GPS statistics
             valid_gps = self.flight_data[self.flight_data['gps_valid'] == True]
             if len(valid_gps) > 0:
+                # Calculate vertical speed for statistics
+                valid_gps = valid_gps.copy()
+                vertical_speeds = []
+                total_speeds = []
+                
+                for i in range(1, len(valid_gps)):
+                    current_row = valid_gps.iloc[i]
+                    previous_row = valid_gps.iloc[i-1]
+                    time_diff = current_row['time_elapsed'] - previous_row['time_elapsed']
+                    if time_diff > 0:
+                        alt_diff = current_row['gps_alt'] - previous_row['gps_alt']
+                        vertical_speed = alt_diff / time_diff
+                        vertical_speeds.append(vertical_speed)
+                        
+                        # Calculate total speed (magnitude of ground and vertical speed vector)
+                        total_speed = np.sqrt(current_row['ground_speed']**2 + vertical_speed**2)
+                        total_speeds.append(total_speed)
+                
                 f.write("GPS STATISTICS\n")
                 f.write("-" * 20 + "\n")
                 f.write(f"Max Altitude: {valid_gps['gps_alt'].max():.2f} m\n")
                 f.write(f"Min Altitude: {valid_gps['gps_alt'].min():.2f} m\n")
                 f.write(f"Max Ground Speed: {valid_gps['ground_speed'].max():.2f} m/s\n")
                 f.write(f"Average Ground Speed: {valid_gps['ground_speed'].mean():.2f} m/s\n")
+                
+                if vertical_speeds:
+                    f.write(f"Max Vertical Speed (Ascent): {max(vertical_speeds):.2f} m/s\n")
+                    f.write(f"Max Vertical Speed (Descent): {min(vertical_speeds):.2f} m/s\n")
+                    f.write(f"Average Vertical Speed: {sum(vertical_speeds)/len(vertical_speeds):.2f} m/s\n")
+                
+                if total_speeds:
+                    f.write(f"Max Total Speed: {max(total_speeds):.2f} m/s\n")
+                    f.write(f"Average Total Speed: {sum(total_speeds)/len(total_speeds):.2f} m/s\n")
+                
                 f.write(f"Latitude Range: {valid_gps['gps_lat'].min():.6f} to {valid_gps['gps_lat'].max():.6f}\n")
                 f.write(f"Longitude Range: {valid_gps['gps_lon'].min():.6f} to {valid_gps['gps_lon'].max():.6f}\n\n")
             
@@ -547,9 +646,9 @@ class FlightLogAnalyzer:
             f.write("ENVIRONMENTAL STATISTICS\n")
             f.write("-" * 20 + "\n")
             f.write(f"Temperature Range: {self.flight_data['temperature'].min():.2f}°C to {self.flight_data['temperature'].max():.2f}°C\n")
-            f.write(f"Pressure Range: {self.flight_data['pressure'].min():.2f} to {self.flight_data['pressure'].max():.2f} Pa\n")
+            f.write(f"Pressure Range: {self.flight_data['pressure_kpa'].min():.2f} to {self.flight_data['pressure_kpa'].max():.2f} kPa\n")
             f.write(f"Average Temperature: {self.flight_data['temperature'].mean():.2f}°C\n")
-            f.write(f"Average Pressure: {self.flight_data['pressure'].mean():.2f} Pa\n\n")
+            f.write(f"Average Pressure: {self.flight_data['pressure_kpa'].mean():.2f} kPa\n\n")
             
             # Signal statistics
             f.write("SIGNAL STATISTICS\n")
@@ -787,6 +886,7 @@ class FlightLogAnalyzer:
         
         # Parse data
         self.parse_flight_log()
+        self.convert_units()  # Convert units after parsing
         self.parse_event_log()
         
         # Generate outputs
@@ -796,7 +896,195 @@ class FlightLogAnalyzer:
         self.generate_summary_report(os.path.join(output_dir, "flight_summary.txt"))
         
         print(f"Analysis complete! Results saved to: {output_dir}")
+    
+    def _calculate_vertical_speed(self):
+        """Calculate vertical speed from rate of change of altitude"""
+        if self.flight_data.empty:
+            return
+        
+        # Filter valid GPS data for calculation
+        valid_gps = self.flight_data[self.flight_data['gps_valid'] == True].copy()
+        
+        if len(valid_gps) < 2:
+            # Not enough data points for calculation
+            self.flight_data['vertical_speed'] = 0.0
+            return
+        
+        # Sort by time to ensure proper order
+        valid_gps = valid_gps.sort_values('time_elapsed')
+        
+        # Calculate vertical speed using difference method
+        vertical_speeds = []
+        
+        for i in range(len(valid_gps)):
+            if i == 0:
+                # First point: use forward difference
+                if len(valid_gps) > 1:
+                    dt = valid_gps.iloc[1]['time_elapsed'] - valid_gps.iloc[0]['time_elapsed']
+                    dalt = valid_gps.iloc[1]['gps_alt'] - valid_gps.iloc[0]['gps_alt']
+                    if dt > 0:
+                        vertical_speed = dalt / dt
+                    else:
+                        vertical_speed = 0.0
+                else:
+                    vertical_speed = 0.0
+            elif i == len(valid_gps) - 1:
+                # Last point: use backward difference
+                dt = valid_gps.iloc[i]['time_elapsed'] - valid_gps.iloc[i-1]['time_elapsed']
+                dalt = valid_gps.iloc[i]['gps_alt'] - valid_gps.iloc[i-1]['gps_alt']
+                if dt > 0:
+                    vertical_speed = dalt / dt
+                else:
+                    vertical_speed = 0.0
+            else:
+                # Middle points: use central difference (more accurate)
+                dt = valid_gps.iloc[i+1]['time_elapsed'] - valid_gps.iloc[i-1]['time_elapsed']
+                dalt = valid_gps.iloc[i+1]['gps_alt'] - valid_gps.iloc[i-1]['gps_alt']
+                if dt > 0:
+                    vertical_speed = dalt / dt
+                else:
+                    vertical_speed = 0.0
+            
+            vertical_speeds.append(vertical_speed)
+        
+        # Create a mapping from index to vertical speed
+        valid_gps['vertical_speed'] = vertical_speeds
+        
+        # Apply smoothing to reduce noise (simple moving average)
+        window_size = 5
+        if len(valid_gps) >= window_size:
+            valid_gps['vertical_speed'] = valid_gps['vertical_speed'].rolling(
+                window=window_size, center=True, min_periods=1
+            ).mean()
+        
+        # Map vertical speeds back to the full dataset
+        # Initialize all vertical speeds to 0
+        self.flight_data['vertical_speed'] = 0.0
+        
+        # Update vertical speeds for valid GPS points
+        for idx, row in valid_gps.iterrows():
+            self.flight_data.at[idx, 'vertical_speed'] = row['vertical_speed']
+        
+        print(f"Calculated vertical speed for {len(valid_gps)} valid GPS points")
+        print(f"Vertical speed range: {valid_gps['vertical_speed'].min():.2f} to {valid_gps['vertical_speed'].max():.2f} m/s")
+    
+    def convert_units(self):
+        """Convert units for better display in plots and reports"""
+        if self.flight_data is None or self.flight_data.empty:
+            return
+            
+        # Convert time to minutes for all plots
+        self.flight_data['time_elapsed_minutes'] = self.flight_data['time_elapsed'] / 60.0
+        
+        # Convert pressure to kPa for all plots
+        self.flight_data['pressure_kpa'] = self.flight_data['pressure'] / 1000.0
+        self.flight_data['diff_pressure2_kpa'] = self.flight_data['diff_pressure2'] / 1000.0
 
+    def detect_flight_phases(self):
+        """Detect key flight phases: release, apogee, and landing"""
+        if self.flight_data is None or self.flight_data.empty:
+            return None
+            
+        valid_gps = self.flight_data[
+            (self.flight_data['gps_valid'] == True) &
+            (self.flight_data['gps_lat'] != 0) &
+            (self.flight_data['gps_lon'] != 0)
+        ].copy()
+        
+        if valid_gps.empty:
+            return None
+            
+        phases = {}
+        
+        # Find balloon release (start of significant ascent)
+        # Look for sustained positive vertical speed above a threshold
+        ascent_threshold = 2.0  # m/s sustained ascent
+        min_ascent_duration = 60  # seconds
+        
+        release_point = None
+        for i in range(len(valid_gps) - 10):  # Check 10 points ahead
+            current_row = valid_gps.iloc[i]
+            
+            # Check if we have sustained ascent for the next several points
+            future_points = valid_gps.iloc[i:i+10]
+            if len(future_points) >= 10:
+                avg_vertical_speed = future_points['vertical_speed'].mean()
+                if avg_vertical_speed > ascent_threshold:
+                    release_point = current_row
+                    break
+        
+        if release_point is not None:
+            phases['release'] = {
+                'timestamp': release_point['timestamp'],
+                'utc_time': release_point['timestamp'],
+                'time_elapsed': release_point['time_elapsed'],
+                'altitude': release_point['gps_alt'],
+                'gps_lat': release_point['gps_lat'],
+                'gps_lon': release_point['gps_lon'],
+                'vertical_speed': release_point['vertical_speed']
+            }
+        
+        # Find apogee (highest altitude point)
+        max_alt_idx = valid_gps['gps_alt'].idxmax()
+        apogee_row = valid_gps.loc[max_alt_idx]
+        
+        phases['apogee'] = {
+            'timestamp': apogee_row['timestamp'],
+            'utc_time': apogee_row['timestamp'],
+            'time_elapsed': apogee_row['time_elapsed'],
+            'altitude': apogee_row['gps_alt'],
+            'gps_lat': apogee_row['gps_lat'],
+            'gps_lon': apogee_row['gps_lon'],
+            'vertical_speed': apogee_row['vertical_speed']
+        }
+        
+        # Find landing (end of significant descent)
+        # Look for when vertical speed approaches zero and stays low
+        landing_threshold = 1.0  # m/s vertical speed threshold
+        min_stable_duration = 120  # seconds of stable flight
+        
+        landing_point = None
+        # Start looking from the last 1/4 of the flight
+        start_idx = len(valid_gps) * 3 // 4
+        
+        for i in range(start_idx, len(valid_gps) - 10):
+            current_row = valid_gps.iloc[i]
+            
+            # Check if we have stable low vertical speed for the next several points
+            future_points = valid_gps.iloc[i:i+10]
+            if len(future_points) >= 10:
+                max_abs_vertical_speed = future_points['vertical_speed'].abs().max()
+                if max_abs_vertical_speed < landing_threshold:
+                    landing_point = current_row
+                    break
+        
+        # If no stable landing detected, use the last point
+        if landing_point is None:
+            landing_point = valid_gps.iloc[-1]
+        
+        phases['landing'] = {
+            'timestamp': landing_point['timestamp'],
+            'utc_time': landing_point['timestamp'],
+            'time_elapsed': landing_point['time_elapsed'],
+            'altitude': landing_point['gps_alt'],
+            'gps_lat': landing_point['gps_lat'],
+            'gps_lon': landing_point['gps_lon'],
+            'vertical_speed': landing_point['vertical_speed']
+        }
+        
+        # Calculate flight duration phases
+        if 'release' in phases:
+            ascent_duration = phases['apogee']['time_elapsed'] - phases['release']['time_elapsed']
+            descent_duration = phases['landing']['time_elapsed'] - phases['apogee']['time_elapsed']
+            total_duration = phases['landing']['time_elapsed'] - phases['release']['time_elapsed']
+            
+            phases['durations'] = {
+                'ascent': ascent_duration,
+                'descent': descent_duration,
+                'total': total_duration
+            }
+        
+        return phases
 
 def main():
     """Main function for command-line usage"""

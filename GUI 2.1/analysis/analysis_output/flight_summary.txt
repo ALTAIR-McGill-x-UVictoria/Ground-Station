@@ -3,10 +3,28 @@ FLIGHT LOG ANALYSIS SUMMARY
 
 BASIC STATISTICS
 --------------------
-Flight Duration: 4097.75 seconds
+Flight Duration: 4097.75 seconds (68.30 minutes)
 Total FC Packets: 1695
 Valid GPS Points: 1695
 Start Time: 2025-07-03 22:10:41.580000
+
+FLIGHT PHASES
+--------------------
+Balloon Release Time (UTC): 2025-07-03 22:11:46.779000
+Release Altitude: 54.82m
+Release Location: (45.863163, -73.592880)
+
+Apogee Time (UTC): 2025-07-03 22:59:10.956000
+Apogee Altitude: 17182.20m
+Apogee Location: (45.783607, -73.135712)
+
+Landing Time (UTC): 2025-07-03 23:18:59.333000
+Landing Altitude: 164.45m
+Landing Location: (45.741665, -72.950722)
+
+Ascent Duration: 2844.18 seconds (47.40 minutes)
+Descent Duration: 1188.38 seconds (19.81 minutes)
+Total Flight Duration: 4032.55 seconds (67.21 minutes)
 
 GPS STATISTICS
 --------------------
@@ -14,15 +32,20 @@ Max Altitude: 17182.20 m
 Min Altitude: 53.50 m
 Max Ground Speed: 260.12 m/s
 Average Ground Speed: 55.55 m/s
+Max Vertical Speed (Ascent): 13.60 m/s
+Max Vertical Speed (Descent): -46.56 m/s
+Average Vertical Speed: 1.27 m/s
+Max Total Speed: 260.19 m/s
+Average Total Speed: 56.41 m/s
 Latitude Range: 45.741665 to 45.863232
 Longitude Range: -73.592918 to -72.950722
 
 ENVIRONMENTAL STATISTICS
 --------------------
 Temperature Range: -4.81°C to 39.56°C
-Pressure Range: 9055.25 to 100680.59 Pa
+Pressure Range: 9.06 to 100.68 kPa
 Average Temperature: 25.68°C
-Average Pressure: 36906.28 Pa
+Average Pressure: 36.91 kPa
 
 SIGNAL STATISTICS
 --------------------
