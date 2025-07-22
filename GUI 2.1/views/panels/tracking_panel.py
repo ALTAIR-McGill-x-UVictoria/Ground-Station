@@ -2,10 +2,12 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, 
     QFrame, QGroupBox, QSizePolicy, QSpacerItem, QSpinBox, QDoubleSpinBox, QPushButton
 )
+from PyQt5.QtCore import QDateTime, QTimeZone
 from PyQt5.QtCore import Qt, QTimer, QDateTime
 from PyQt5.QtGui import QFont, QColor, QPalette
 import time
 import math
+import threading
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
@@ -17,7 +19,7 @@ from astropy.coordinates import SkyCoord, EarthLocation, AltAz
 from astropy.time import Time
 import astropy.units as u
 from views.widgets.compass_widget import CompassWidget
-
+import pytz
 # Import ZWO camera functionality
 try:
     sys.path.append(os.path.join(os.path.dirname(__file__), 'ZWO_Trigger'))
@@ -262,16 +264,16 @@ class TrackingPanel(QWidget):
         self.map_controller = map_controller
         
         # Tracking data
-        self.balloon_lat = 0.0
-        self.balloon_lon = 0.0
-        self.balloon_alt = 0.0
+        self.balloon_lat = 0
+        self.balloon_lon = 0
+        self.balloon_alt = 30
         self.ground_lat = 0.0
         self.ground_lon = 0.0
         self.ground_alt = 0.0
         self.bearing = 0.0
         self.elevation = 0.0
         self.distance = 0.0
-        
+        self.slew_in_progress = False
         # Variables for tracking LED status and exposure timing
         self.last_minute = -1  # Track minute changes
         self.last_exposure_check = -1  # Track exposure timing
@@ -568,8 +570,8 @@ class TrackingPanel(QWidget):
     def generate_filename(self):
         """Generate a unique filename for camera capture"""
         # current_time = QDateTime.currentDateTimeUtc()
-        current_time = gps_utc_time
-        timestamp = current_time.toString("yyyyMMdd_hhmmss")
+        current_time = self.get_current_utc_time().toPyDateTime()
+        timestamp = current_time.strftime("%Y%m%d_%H%M%S")         # Format manually
         self.image_counter += 1
         # Use .jpg extension for RGB images
         filename = f"balloon_tracking_{timestamp}_{self.image_counter:04d}.tiff"
@@ -822,7 +824,7 @@ class TrackingPanel(QWidget):
         if lat != 0 and lon != 0:
             self.balloon_lat = lat
             self.balloon_lon = lon
-            self.balloon_alt = alt
+            self.balloon_alt = alt + 30
             self.calculate_tracking_parameters()
     
     def update_ground_position(self, lat, lon, alt):
@@ -901,10 +903,11 @@ class TrackingPanel(QWidget):
         """Calculate right ascension and declination using astropy"""
         # Observer location (your ground station)
         observer = EarthLocation(lat=self.ground_lat*u.deg, lon=self.ground_lon*u.deg, height=self.ground_alt*u.m)
-
+        local_dt = self.get_current_utc_time().toPyDateTime()
+        utc_dt = local_dt.astimezone(pytz.utc)
         # Time (should be from GPS ideally)
-        gps_utc = self.get_current_utc_time().toPyDateTime()
-        time = Time(gps_utc)
+        # gps_utc = self.get_current_utc_time().toPyDateTime()
+        time = Time(utc_dt)
 
         # Balloon's position as seen from observer
         balloon_altaz = SkyCoord(
@@ -924,6 +927,7 @@ class TrackingPanel(QWidget):
 
         return ra, dec
     
+
     def update_displays(self):
         """Update all display elements"""
         # Update bearing display
@@ -979,7 +983,7 @@ class TrackingPanel(QWidget):
 
         # Slew the telescope mount to the calculated RA/DEC
         # Convert RA to hours as float, DEC to degrees as float
-        self.telescope_controller.slew_to(ra.hour, dec.degree)
+        self.safe_slew(ra.hour, dec.degree)
 
     def update_status_indicators(self):
         """Update status indicators based on system state"""
@@ -1010,13 +1014,18 @@ class TrackingPanel(QWidget):
         print("DEBUG: Status3 (LED) handled separately")
     
     def get_current_utc_time(self):
-        """Get current UTC time, preferring GPS time if available"""
+        """Get current UTC-4 time, preferring GPS time if available"""
+        tz = QTimeZone(b"-04:00")  # UTC-4 fixed offset
+
         if hasattr(self.telemetry_model, 'gs_gps_utc_unix') and self.telemetry_model.gs_gps_utc_unix > 0:
-            # Use ground station GPS UTC time
-            return QDateTime.fromSecsSinceEpoch(int(self.telemetry_model.gs_gps_utc_unix))
+            # Convert GPS UTC time to UTC-4
+            dt = QDateTime.fromSecsSinceEpoch(int(self.telemetry_model.gs_gps_utc_unix))
         else:
-            # Fallback to system UTC time
-            return QDateTime.currentDateTimeUtc()
+            # Convert system UTC time to UTC-4
+            dt = QDateTime.currentDateTimeUtc()
+
+        dt.setTimeZone(tz)
+        return dt
     
     def check_exposure_timing(self):
         """Check for exposure timing and LED status updates based on GPS UTC time"""
@@ -1209,46 +1218,36 @@ class TrackingPanel(QWidget):
         self.led_canvas.draw()
 
     def trigger_camera_capture(self):
-        """Trigger camera capture and save image with unique filename"""
+        """Trigger camera capture and save image with unique filename asynchronously"""
 
-        try:
-            if CAMERA_AVAILABLE and camera:
-                # Initialize camera for capture
-                if not self.initialize_camera_for_capture():
-                    print("Failed to initialize camera for capture")
-                    return
+        def capture():
+            try:
+                if CAMERA_AVAILABLE and camera:
+                    if not self.initialize_camera_for_capture():
+                        print("Failed to initialize camera for capture")
+                        return
 
-            # Check if seconds increased by 2 (handle wrap-around at 60)
-                filename = self.generate_filename()
-                print(f"Triggering camera capture: {filename}")
-                print(f"Camera settings - Gain: {self.camera_gain}, Exposure: {self.camera_exposure}μs")
-                # Call the RGB_photo function from ZWO_Trigger
-                RGB_photo(filename, self.camera_gain, self.camera_exposure)
-                
-                print(f"Camera capture completed: {filename}")
-                
-                # Update camera status to show success
-                if hasattr(self, 'camera_status_label'):
-                    self.camera_status_label.setText("CAPTURE OK")
-                    self.camera_status_label.setStyleSheet("color: #00ff00; margin-bottom: 6px;")
-                    
-                    # Reset status after 3 seconds
-                    QTimer.singleShot(3000, lambda: self.reset_camera_status())
-                # Update last_seconds after the check
+                    filename = self.generate_filename()
+                    print(f"Triggering camera capture: {filename}")
+                    print(f"Camera settings - Gain: {self.camera_gain}, Exposure: {self.camera_exposure}μs")
 
-            else:
-                print("Camera not available or not initialized")
-                # Call dummy function to show what would happen
-                # RGB_photo("dummy_filename.jpg", self.camera_gain, self.camera_exposure)
-        except Exception as e:
-            print(f"Error during camera capture: {e}")
-            # Update camera status to show error
-            if hasattr(self, 'camera_status_label'):
-                self.camera_status_label.setText("ERROR")
-                self.camera_status_label.setStyleSheet("color: #ff0000; margin-bottom: 6px;")
-                # Reset status after 5 seconds
-                QTimer.singleShot(5000, lambda: self.reset_camera_status())
-    
+                    RGB_photo(filename, self.camera_gain, self.camera_exposure)
+
+                    print(f"Camera capture completed: {filename}")
+
+                    # UI updates must run on the main thread
+                    QTimer.singleShot(0, lambda: self.update_camera_status(success=True))
+
+                else:
+                    print("Camera not available or not initialized")
+
+            except Exception as e:
+                print(f"Error during camera capture: {e}")
+                QTimer.singleShot(0, lambda: self.update_camera_status(success=False))
+
+        # Start capture in a new thread
+        threading.Thread(target=capture, daemon=True).start()
+
         
     def reset_camera_status(self):
         """Reset camera status display to default"""
@@ -1258,3 +1257,15 @@ class TrackingPanel(QWidget):
             self.camera_status_label.setText(camera_status_text)
             self.camera_status_label.setStyleSheet(f"color: {camera_status_color}; margin-bottom: 6px;")
     
+    def safe_slew(self, ra_hour, dec_deg):
+        if self.slew_in_progress:
+            return  # Don't start a new slew if one is in progress
+        self.slew_in_progress = True
+
+        def threaded_slew():
+            try:
+                self.telescope_controller.slew_to(ra_hour, dec_deg)
+            finally:
+                self.slew_in_progress = False  # Mark slew as done
+
+        threading.Thread(target=threaded_slew, daemon=True).start()
