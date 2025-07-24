@@ -266,7 +266,7 @@ class TrackingPanel(QWidget):
         # Tracking data
         self.balloon_lat = 0
         self.balloon_lon = 0
-        self.balloon_alt = 30
+        self.balloon_alt = 0
         self.ground_lat = 0.0
         self.ground_lon = 0.0
         self.ground_alt = 0.0
@@ -824,7 +824,7 @@ class TrackingPanel(QWidget):
         if lat != 0 and lon != 0:
             self.balloon_lat = lat
             self.balloon_lon = lon
-            self.balloon_alt = alt + 30
+            self.balloon_alt = alt
             self.calculate_tracking_parameters()
     
     def update_ground_position(self, lat, lon, alt):
