@@ -9,8 +9,8 @@ from flight_log_analyzer import FlightLogAnalyzer
 
 def main():
     # Define file paths
-    log_file = r"C:\Users\bdagn\Documents\GitHub\Ground-Station\GUI 2.1\logs\flight_log_2025-07-03_22-10-39.txt"
-    event_log = r"C:\Users\bdagn\Documents\GitHub\Ground-Station\GUI 2.1\event_logs\event_log_2025-07-03_22-07-27.txt"
+    log_file = r"C:\Users\bdagn\Documents\GitHub\Ground-Station\GUI 2.1\logs\flight_log_2025-07-23_21-41-08.txt"
+    event_log = r"C:\Users\bdagn\Documents\GitHub\Ground-Station\GUI 2.1\event_logs\event_log_2025-07-23_21-40-50.txt"
     output_dir = "analysis_output"
     
     print("Flight Log Analysis")
