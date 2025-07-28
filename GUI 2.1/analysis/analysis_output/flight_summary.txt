@@ -3,100 +3,79 @@ FLIGHT LOG ANALYSIS SUMMARY
 
 BASIC STATISTICS
 --------------------
-Flight Duration: 4097.75 seconds (68.30 minutes)
-Total FC Packets: 1695
-Valid GPS Points: 1695
-Start Time: 2025-07-03 22:10:41.580000
+Flight Duration: 6004.46 seconds (100.07 minutes)
+Total FC Packets: 2275
+Valid GPS Points: 2271
+Start Time: 2025-07-23 21:41:09.796000
 
 FLIGHT PHASES
 --------------------
-Balloon Release Time (UTC): 2025-07-03 22:11:46.779000
-Release Altitude: 54.82m
-Release Location: (45.863163, -73.592880)
+Balloon Release Time (UTC): 2025-07-23 22:19:05.071000
+Release Altitude: -416.91m
+Release Location: (45.861088, -73.598305)
 
-Apogee Time (UTC): 2025-07-03 22:59:10.956000
-Apogee Altitude: 17182.20m
-Apogee Location: (45.783607, -73.135712)
+Apogee Time (UTC): 2025-07-23 23:03:27.526000
+Apogee Altitude: 16347.39m
+Apogee Location: (45.672813, -73.109718)
 
-Landing Time (UTC): 2025-07-03 23:18:59.333000
-Landing Altitude: 164.45m
-Landing Location: (45.741665, -72.950722)
+Landing Time (UTC): 2025-07-23 23:21:14.252000
+Landing Altitude: 239.35m
+Landing Location: (45.600971, -72.915985)
 
-Ascent Duration: 2844.18 seconds (47.40 minutes)
-Descent Duration: 1188.38 seconds (19.81 minutes)
-Total Flight Duration: 4032.55 seconds (67.21 minutes)
+Ascent Duration: 2662.45 seconds (44.37 minutes)
+Descent Duration: 1066.73 seconds (17.78 minutes)
+Total Flight Duration: 3729.18 seconds (62.15 minutes)
 
 GPS STATISTICS
 --------------------
-Max Altitude: 17182.20 m
-Min Altitude: 53.50 m
-Max Ground Speed: 260.12 m/s
-Average Ground Speed: 55.55 m/s
-Max Vertical Speed (Ascent): 13.60 m/s
-Max Vertical Speed (Descent): -46.56 m/s
-Average Vertical Speed: 1.27 m/s
-Max Total Speed: 260.19 m/s
-Average Total Speed: 56.41 m/s
-Latitude Range: 45.741665 to 45.863232
-Longitude Range: -73.592918 to -72.950722
+Max Altitude: 16347.39 m
+Min Altitude: -416.91 m
+Max Ground Speed: 137.46 m/s
+Average Ground Speed: 40.60 m/s
+Max Vertical Speed (Ascent): 100.02 m/s
+Max Vertical Speed (Descent): -204.49 m/s
+Average Vertical Speed: 1.06 m/s
+Max Total Speed: 204.49 m/s
+Average Total Speed: nan m/s
+Latitude Range: 45.594467 to 45.876270
+Longitude Range: -73.608490 to -72.915985
 
 ENVIRONMENTAL STATISTICS
 --------------------
-Temperature Range: -4.81°C to 39.56°C
-Pressure Range: 9.06 to 100.68 kPa
-Average Temperature: 25.68°C
-Average Pressure: 36.91 kPa
+Temperature Range: 0.00°C to 55.64°C
+Pressure Range: 0.00 to 101.35 kPa
+Average Temperature: 49.37°C
+Average Pressure: 69.66 kPa
 
 SIGNAL STATISTICS
 --------------------
-RSSI Range: -103 to -6 dBm
-SNR Range: -15 to 12 dB
-Average RSSI: -84.59 dBm
-Average SNR: -1.48 dB
+RSSI Range: -104 to 0 dBm
+SNR Range: -14 to 14 dB
+Average RSSI: -64.05 dBm
+Average SNR: 3.19 dB
 
 SYSTEM STATUS
 --------------------
-SD Card Status: 1695 true readings
-Actuator Status: 719 true readings
-LED Status: 1695 true readings
-Battery Voltage Range: 12.60V to 12.60V
+SD Card Status: 2275 true readings
+Actuator Status: 433 true readings
+LED Status: 2274 true readings
+Battery Voltage Range: 0.00V to 12.60V
 
 TERMINATION EVENTS
 --------------------
-Total Termination Events: 5
-Termination Events: 3
-De-termination Events: 2
+Total Termination Events: 1
+Termination Events: 1
+De-termination Events: 0
 
 Event Details:
-  1. TERMINATION at 2025-07-03 22:46:34.157000
-     Location: (45.775307, -73.260147)
-     Altitude: 13512.68m
-     Time Elapsed: 2152.58s
-
-  2. DE-TERMINATION at 2025-07-03 22:47:31.148000
-     Location: (45.776123, -73.250076)
-     Altitude: 13765.80m
-     Time Elapsed: 2209.57s
-
-  3. TERMINATION at 2025-07-03 22:47:41.770000
-     Location: (45.776539, -73.248306)
-     Altitude: 13816.17m
-     Time Elapsed: 2220.19s
-
-  4. DE-TERMINATION at 2025-07-03 22:49:22.333000
-     Location: (45.780750, -73.228432)
-     Altitude: 14294.96m
-     Time Elapsed: 2320.75s
-
-  5. TERMINATION at 2025-07-03 22:49:29.980000
-     Location: (45.781048, -73.226807)
-     Altitude: 14332.06m
-     Time Elapsed: 2328.40s
+  1. TERMINATION at 2025-07-23 22:54:02.475000
+     Location: (45.753242, -73.216370)
+     Altitude: 12711.95m
+     Time Elapsed: 4372.68s
 
 EVENT SUMMARY
 --------------------
-Total Events: 9
+Total Events: 4
 Logging: 1 events
 SD Card Status: 1 events
-Actuator Status: 6 events
-Command Sent: 1 events
+Actuator Status: 2 events
