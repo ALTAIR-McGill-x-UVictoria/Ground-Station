@@ -47,7 +47,7 @@
     </Placemark>
     <Placemark>
       <name>TERMINATION Event</name>
-      <description>&lt;b&gt;TERMINATION EVENT&lt;/b&gt;&lt;br/&gt;&lt;br/&gt;&lt;b&gt;Time:&lt;/b&gt; 2025-07-23 22:54:02.475000&lt;br/&gt;&lt;b&gt;Time Elapsed:&lt;/b&gt; 4372.68 seconds&lt;br/&gt;&lt;b&gt;Actuator Status:&lt;/b&gt; ACTIVE&lt;br/&gt;&lt;br/&gt;&lt;b&gt;Location:&lt;/b&gt;&lt;br/&gt;Latitude: 45.753242&lt;br/&gt;Longitude: -73.216370&lt;br/&gt;Altitude: 12711.95m&lt;br/&gt;&lt;br/&gt;&lt;b&gt;Telemetry Data:&lt;/b&gt;&lt;br/&gt;Ground Speed: 107.61m/s&lt;br/&gt;Temperature: 48.75C&lt;br/&gt;Pressure: 19275.13Pa&lt;br/&gt;RSSI: -103dBm&lt;br/&gt;SNR: -10dB</description>
+      <description>&lt;b&gt;TERMINATION EVENT&lt;/b&gt;&lt;br/&gt;&lt;br/&gt;&lt;b&gt;Time:&lt;/b&gt; 2025-07-23 22:54:02.475000&lt;br/&gt;&lt;b&gt;Time Elapsed:&lt;/b&gt; 4372.68 seconds&lt;br/&gt;&lt;b&gt;Actuator Status:&lt;/b&gt; ACTIVE&lt;br/&gt;&lt;br/&gt;&lt;b&gt;Location:&lt;/b&gt;&lt;br/&gt;Latitude: 45.753242&lt;br/&gt;Longitude: -73.216370&lt;br/&gt;Altitude: 12711.95m&lt;br/&gt;&lt;br/&gt;&lt;b&gt;Telemetry Data:&lt;/b&gt;&lt;br/&gt;Ground Speed: 107.61m/s&lt;br/&gt;Temperature: 48.75°C&lt;br/&gt;Pressure: 19275.13Pa&lt;br/&gt;RSSI: -103dBm&lt;br/&gt;SNR: -10dB</description>
       <styleUrl>#termination_style</styleUrl>
       <Point>
         <extrude>1</extrude>
@@ -57,7 +57,7 @@
     </Placemark>
     <Placemark>
       <name>APOGEE - Balloon Burst</name>
-      <description>&lt;b&gt;APOGEE - BALLOON BURST&lt;/b&gt;&lt;br/&gt;&lt;br/&gt;&lt;b&gt;Time:&lt;/b&gt; 2025-07-23 23:03:27.526000&lt;br/&gt;&lt;b&gt;Time Elapsed:&lt;/b&gt; 4937.73 seconds&lt;br/&gt;&lt;b&gt;Maximum Altitude:&lt;/b&gt; 16347.39m&lt;br/&gt;&lt;br/&gt;&lt;b&gt;Location:&lt;/b&gt;&lt;br/&gt;Latitude: 45.672813&lt;br/&gt;Longitude: -73.109718&lt;br/&gt;&lt;br/&gt;&lt;b&gt;Telemetry Data at Apogee:&lt;/b&gt;&lt;br/&gt;Ground Speed: 40.92m/s&lt;br/&gt;Temperature: 44.53C&lt;br/&gt;Pressure: 10628.71Pa&lt;br/&gt;RSSI: -101dBm&lt;br/&gt;SNR: -12dB</description>
+      <description>&lt;b&gt;APOGEE - BALLOON BURST&lt;/b&gt;&lt;br/&gt;&lt;br/&gt;&lt;b&gt;Time:&lt;/b&gt; 2025-07-23 23:03:27.526000&lt;br/&gt;&lt;b&gt;Time Elapsed:&lt;/b&gt; 4937.73 seconds&lt;br/&gt;&lt;b&gt;Maximum Altitude:&lt;/b&gt; 16347.39m&lt;br/&gt;&lt;br/&gt;&lt;b&gt;Location:&lt;/b&gt;&lt;br/&gt;Latitude: 45.672813&lt;br/&gt;Longitude: -73.109718&lt;br/&gt;&lt;br/&gt;&lt;b&gt;Telemetry Data at Apogee:&lt;/b&gt;&lt;br/&gt;Ground Speed: 40.92m/s&lt;br/&gt;Temperature: 44.53°C&lt;br/&gt;Pressure: 10628.71Pa&lt;br/&gt;RSSI: -101dBm&lt;br/&gt;SNR: -12dB</description>
       <styleUrl>#apogee_style</styleUrl>
       <Point>
         <coordinates>-73.109718,45.672813,16347.39</coordinates>
