@@ -226,36 +226,7 @@ class StatusIndicator(QFrame):
 
 
 class TrackingPanel(QWidget):
-    def log_tracking_data(self):
-        """Log all tracking panel data to a separate file"""
-        import datetime
-        log_dir = os.path.join(os.path.dirname(__file__), '../../logs')
-        os.makedirs(log_dir, exist_ok=True)
-        now = datetime.datetime.utcnow().strftime('%Y-%m-%d %H-%M-%S')
-        log_file = os.path.join(log_dir, f'tracking_panel_log_{now}.txt')
-        data = {
-            'timestamp_utc': now,
-            'balloon_lat': self.balloon_lat,
-            'balloon_lon': self.balloon_lon,
-            'balloon_alt': self.balloon_alt,
-            'ground_lat': self.ground_lat,
-            'ground_lon': self.ground_lon,
-            'ground_alt': self.ground_alt,
-            'bearing': self.bearing,
-            'elevation': self.elevation,
-            'distance': self.distance,
-        }
-        # Add celestial coordinates if available
-        try:
-            ra, dec = self.calculate_celestial_coordinates()
-            data['ra'] = ra.to_string(unit=u.hour, sep=':')
-            data['dec'] = dec.to_string(unit=u.deg, sep=':')
-        except Exception as e:
-            data['ra'] = 'N/A'
-            data['dec'] = 'N/A'
-        # Write as a single line (CSV style)
-        with open(log_file, 'a') as f:
-            f.write(','.join(f'{k}={v}' for k, v in data.items()) + '\n')
+
 
     """Panel for balloon tracking visualization and ground station operations"""
     
@@ -289,7 +260,11 @@ class TrackingPanel(QWidget):
         self.image_counter = 0  # Counter for unique filenames
         
         # self.tracking_enabled = True  # False for tracking, True for predicting 
-        
+        self.log_dir = os.path.join(os.path.dirname(__file__), '../../logs')
+        os.makedirs(self.log_dir, exist_ok=True)
+        now = datetime.utcnow().strftime('%Y-%m-%d %H-%M-%S')
+        self.log_file = os.path.join(self.log_dir, f'tracking_panel_log_{now}.txt')
+
         self.ekf = EKF()
         self.pred_lat = 0.0
         self.pred_lon = 0.0
@@ -522,6 +497,34 @@ class TrackingPanel(QWidget):
         self.manual_apply_btn.clicked.connect(self.apply_manual_ground_station)
 
         return group
+    
+    def log_tracking_data(self):
+        """Log all tracking panel data to a separate file"""
+        import datetime
+        data = {
+            'timestamp_utc': self.get_current_utc_time().toPyDateTime(),
+            'balloon_lat': self.balloon_lat,
+            'balloon_lon': self.balloon_lon,
+            'balloon_alt': self.balloon_alt,
+            'ground_lat': self.ground_lat,
+            'ground_lon': self.ground_lon,
+            'ground_alt': self.ground_alt,
+            'bearing': self.bearing,
+            'elevation': self.elevation,
+            'distance': self.distance,
+        }
+        # Add celestial coordinates if available
+        try:
+            ra, dec = self.calculate_celestial_coordinates()
+            data['ra'] = ra.to_string(unit=u.hour, sep=':')
+            data['dec'] = dec.to_string(unit=u.deg, sep=':')
+        except Exception as e:
+            data['ra'] = 'N/A'
+            data['dec'] = 'N/A'
+        # Write as a single line (CSV style)
+        with open(self.log_file, 'a') as f:
+            f.write(','.join(f'{k}={v}' for k, v in data.items()) + '\n')
+
     def apply_manual_ground_station(self):
         """Apply manual ground station coordinates from user input"""
         lat = self.manual_lat_spin.value()
@@ -967,15 +970,8 @@ class TrackingPanel(QWidget):
         """Calculate right ascension and declination using astropy"""
         # Observer location (your ground station)
         observer = EarthLocation(lat=self.ground_lat*u.deg, lon=self.ground_lon*u.deg, height=self.ground_alt*u.m)
-        local_dt = self.get_current_utc_time().toPyDateTime()
-        # dt_utc4 = local_dt.astimezone(pytz.timezone('Etc/GMT-5'))
-        # time = Time(dt_utc4)
-        # observing_time = Time(datetime.utcnow(), scale='utc', location=observer)
-        # LST = observing_time.sidereal_time('mean')
-        # utc_dt = local_dt.astimezone(pytz.utc)
-        # # Time (should be from GPS ideally)
-        # gps_utc = self.get_current_utc_time().toPyDateTime()
-        time = Time(local_dt)
+        # local_dt = self.get_current_utc_time().toPyDateTime()
+        time = Time(self.telemetry_model.gs_gps_utc_unix, format='unix')
         if bearing is None:
             bearing = self.bearing
         if elevation is None:
