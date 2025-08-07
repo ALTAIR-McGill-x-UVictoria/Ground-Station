@@ -33,3 +33,4 @@ class TelescopeController:
     def get_current_coordinates(self):
         self.connect()
         return self.mount.RightAscension, self.mount.Declination
+

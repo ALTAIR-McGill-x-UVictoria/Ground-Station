@@ -367,15 +367,18 @@ class TelemetryController(QObject):
                 'gps_time': safe_float(values[9]) if len(values) > 9 else 0.0,
                 
                 # FC IMU (10-12) - empty in your format
-                'abs_pressure1': safe_float(values[10]) if len(values) > 10 else 0.0,
-                'temperature1': safe_float(values[11]) if len(values) > 11 else 0.0,
-                'altitude1': safe_float(values[12]) if len(values) > 12 else 0.0,
+                # 'abs_pressure1': safe_float(values[10]) if len(values) > 10 else 0.0,
+                # 'temperature1': safe_float(values[11]) if len(values) > 11 else 0.0,
+                # 'altitude1': safe_float(values[12]) if len(values) > 12 else 0.0,
                 
                 # Pixhawk IMU (13-15)
-                'abs_pressure2': safe_float(values[13]) if len(values) > 13 else 0.0,
-                'temperature2': safe_float(values[14]) if len(values) > 14 else 0.0,
-                'diff_pressure2': safe_float(values[15]) if len(values) > 15 else 0.0,
+                'abs_pressure2': safe_float(values[10]) if len(values) > 10 else 0.0,
+                'temperature2': safe_float(values[11]) if len(values) > 11 else 0.0,
+                'diff_pressure2': safe_float(values[12]) if len(values) > 12 else 0.0,
                 
+                'acc_x': safe_float(values[13]) if len(values) > 13 else 0.0,
+                'acc_y': safe_float(values[14]) if len(values) > 14 else 0.0,
+                'acc_z': safe_float(values[15]) if len(values) > 15 else 0.0,
                 # FC Status (16-17)
                 'sd_status': safe_bool(values[16]) if len(values) > 16 else False,
                 'actuator_status': safe_bool(values[17]) if len(values) > 17 else False,

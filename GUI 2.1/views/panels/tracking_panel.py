@@ -2,8 +2,7 @@ from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, 
     QFrame, QGroupBox, QSizePolicy, QSpacerItem, QSpinBox, QDoubleSpinBox, QPushButton
 )
-from PyQt5.QtCore import QDateTime, QTimeZone
-from PyQt5.QtCore import Qt, QTimer, QDateTime
+from PyQt5.QtCore import QDateTime, QTimeZone, Qt, QTimer, QDateTime
 from PyQt5.QtGui import QFont, QColor, QPalette
 import time
 import math
@@ -20,7 +19,8 @@ from astropy.time import Time
 import astropy.units as u
 from views.widgets.compass_widget import CompassWidget
 import pytz
-from .EKF_algo.algo import EKF
+from datetime import datetime
+from .EKF_algo.EKF import EKF
 # Import ZWO camera functionality
 try:
     sys.path.append(os.path.join(os.path.dirname(__file__), 'ZWO_Trigger'))
@@ -231,7 +231,7 @@ class TrackingPanel(QWidget):
         import datetime
         log_dir = os.path.join(os.path.dirname(__file__), '../../logs')
         os.makedirs(log_dir, exist_ok=True)
-        now = datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+        now = datetime.datetime.utcnow().strftime('%Y-%m-%d %H-%M-%S')
         log_file = os.path.join(log_dir, f'tracking_panel_log_{now}.txt')
         data = {
             'timestamp_utc': now,
@@ -279,12 +279,16 @@ class TrackingPanel(QWidget):
         self.last_minute = -1  # Track minute changes
         self.last_exposure_check = -1  # Track exposure timing
         
+        self.acc_x = 0
+        self.acc_y = 0
+        self.acc_z = 0
+
         # Camera settings (initialize before UI setup)
         self.camera_gain = 150  # Default gain
         self.camera_exposure = 30000  # Default exposure in microseconds
         self.image_counter = 0  # Counter for unique filenames
         
-        self.tracking_enabled = True  # False for tracking, True for predicting 
+        # self.tracking_enabled = True  # False for tracking, True for predicting 
         
         self.ekf = EKF()
         self.pred_lat = 0.0
@@ -427,6 +431,8 @@ class TrackingPanel(QWidget):
 
         # Declination
         self.add_parameter_display(params_layout, "Declination:", "dec_label", "---° ---'", 4)
+        
+        self.add_parameter_display(params_layout, "Pred Bearing:", "pred_bearing_label", "---°", 5)
 
         layout.addWidget(params_frame, 0, 1)
 
@@ -583,7 +589,7 @@ class TrackingPanel(QWidget):
         """Generate a unique filename for camera capture"""
         # current_time = QDateTime.currentDateTimeUtc()
         current_time = self.get_current_utc_time().toPyDateTime()
-        timestamp = current_time.strftime("%Y%m%d_%H%M%S")         # Format manually
+        timestamp = current_time.strftime("%Y%m%d_%H-%M-%S")         # Format manually
         self.image_counter += 1
         # Use .jpg extension for RGB images
         filename = f"balloon_tracking_{timestamp}_{self.image_counter:04d}.tiff"
@@ -808,34 +814,34 @@ class TrackingPanel(QWidget):
         layout.addWidget(camera_frame)
 
         #Add toggle button for telescope slewing mode tracking/predicting
-        self.slew_toggle_button = QPushButton("Toggle Slew Mode")
-        self.slew_toggle_button.setStyleSheet("""
-            QPushButton {
-                background-color: #3a3a3a;
-                color: #ffffff;
-                border: 1px solid #555555;
-                border-radius: 4px;
-                padding: 6px 12px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background-color: #4a4a4a;
-            }
-            QPushButton:pressed {
-                background-color: #2a2a2a;
-            }
-        """)
-        self.slew_toggle_button.clicked.connect(self.toggle_slew_mode)
-        layout.addWidget(self.slew_toggle_button)
+        # self.slew_toggle_button = QPushButton("Toggle Slew Mode")
+        # self.slew_toggle_button.setStyleSheet("""
+        #     QPushButton {
+        #         background-color: #3a3a3a;
+        #         color: #ffffff;
+        #         border: 1px solid #555555;
+        #         border-radius: 4px;
+        #         padding: 6px 12px;
+        #         font-weight: bold;
+        #     }
+        #     QPushButton:hover {
+        #         background-color: #4a4a4a;
+        #     }
+        #     QPushButton:pressed {
+        #         background-color: #2a2a2a;
+        #     }
+        # """)
+        # self.slew_toggle_button.clicked.connect(self.toggle_slew_mode)
+        # layout.addWidget(self.slew_toggle_button)
 
         
         return group
     
-    def toggle_slew_mode(self):
-        self.tracking_enabled = not self.tracking_enabled
-        self.slew_toggle_button.setText(
-            "Tracking ON" if self.tracking_enabled else "Tracking OFF"
-        )
+    # def toggle_slew_mode(self):
+    #     self.tracking_enabled = not self.tracking_enabled
+    #     self.slew_toggle_button.setText(
+    #         "Tracking ON" if self.tracking_enabled else "Tracking OFF"
+    #     )
 
     def add_parameter_display(self, layout, label_text, value_attr, default_value, row):
         """Add a parameter display to the layout"""
@@ -855,18 +861,23 @@ class TrackingPanel(QWidget):
     
     def setup_connections(self):
         """Connect to model signals"""
+        self.telemetry_model.acc_updated.connect(self.update_acceleration)
         self.telemetry_model.position_updated.connect(self.update_balloon_position)
         self.telemetry_model.ground_station_gps_updated.connect(self.update_ground_position)
         self.map_controller.user_location_changed.connect(self.update_ground_position_from_controller)
     
+    def update_acceleration(self, acc_x, acc_y, acc_z):
+        """Update acceleration display"""
+        self.acc_x = acc_x# Assuming you have a QLabel for acceleration display
+        self.acc_y = acc_y
+        self.acc_z = acc_z - 9.81
+
     def update_balloon_position(self, lat, lon, alt):
         """Update balloon position and recalculate tracking"""
         if lat != 0 and lon != 0:
             self.balloon_lat = lat
             self.balloon_lon = lon
             self.balloon_alt = alt
-            self.ekf.update((lat,lon,alt))
-            self.pred_lat, self.pred_lon, self.pred_alt=self.ekf.get_state()
             self.calculate_tracking_parameters()
     
     def update_ground_position(self, lat, lon, alt):
@@ -957,10 +968,14 @@ class TrackingPanel(QWidget):
         # Observer location (your ground station)
         observer = EarthLocation(lat=self.ground_lat*u.deg, lon=self.ground_lon*u.deg, height=self.ground_alt*u.m)
         local_dt = self.get_current_utc_time().toPyDateTime()
-        utc_dt = local_dt.astimezone(pytz.utc)
-        # Time (should be from GPS ideally)
+        # dt_utc4 = local_dt.astimezone(pytz.timezone('Etc/GMT-5'))
+        # time = Time(dt_utc4)
+        # observing_time = Time(datetime.utcnow(), scale='utc', location=observer)
+        # LST = observing_time.sidereal_time('mean')
+        # utc_dt = local_dt.astimezone(pytz.utc)
+        # # Time (should be from GPS ideally)
         # gps_utc = self.get_current_utc_time().toPyDateTime()
-        time = Time(utc_dt)
+        time = Time(local_dt)
         if bearing is None:
             bearing = self.bearing
         if elevation is None:
@@ -969,7 +984,7 @@ class TrackingPanel(QWidget):
         balloon_altaz = SkyCoord(
             az = bearing*u.deg,
             alt = elevation*u.deg,
-            frame=AltAz(location=observer, obstime=time)
+            frame=AltAz(obstime = time, location=observer)
         )
 
         # Convert to RA/DEC (Equatorial coordinates)
@@ -1001,9 +1016,10 @@ class TrackingPanel(QWidget):
         else:
             pb, pe, _ = self.calculate_parameters_for(self.pred_lat, self.pred_lon, self.pred_alt)
             ra, dec = self.calculate_celestial_coordinates(pb, pe)
+            self.pred_bearing_label.setText(f"{pb:.1f}°")  
 
-        self.ra_label.setTest(ra.to_string(unit=u.hour, sep=':'))
-        self.dec_label.setText(dec.to_string(unit.u.deg, sep=':'))
+        self.ra_label.setText(ra.to_string(unit=u.hour, sep=':'))
+        self.dec_label.setText(dec.to_string(unit=u.deg, sep=':'))
 
         # Log tracking data
         self.log_tracking_data()
@@ -1043,12 +1059,9 @@ class TrackingPanel(QWidget):
         # Update LED status based on UTC time (after other status updates)
         self.update_led_status()
 
-        if self.tracking_enabled:
+        if time.time() - self.last_pred_slew_time >= 5:
             self.safe_slew(ra.hour, dec.degree)
-        else:
-            if time.time() - self.last_pred_slew_time >= 10:
-                self.safe_slew(ra.hour, dec.degree)
-                self.last_pred_slew_time = time.time()
+            self.last_pred_slew_time = time.time()
 
     def update_status_indicators(self):
         """Update status indicators based on system state"""
@@ -1080,7 +1093,7 @@ class TrackingPanel(QWidget):
     
     def get_current_utc_time(self):
         """Get current UTC-4 time, preferring GPS time if available"""
-        # tz = QTimeZone(b"-04:00")  # UTC-4 fixed offset
+        tz = QTimeZone(b"-04:00")  # UTC-4 fixed offset
 
         if hasattr(self.telemetry_model, 'gs_gps_utc_unix') and self.telemetry_model.gs_gps_utc_unix > 0:
             # Convert GPS UTC time to UTC-4
@@ -1089,7 +1102,7 @@ class TrackingPanel(QWidget):
             # Convert system UTC time to UTC-4
             dt = QDateTime.currentDateTimeUtc()
 
-        # dt.setTimeZone(tz)
+        dt.setTimeZone(tz)
         return dt
     
     def check_exposure_timing(self):
@@ -1213,9 +1226,15 @@ class TrackingPanel(QWidget):
         """Update LED timing plot with current patterns"""
         current_time = self.get_current_utc_time()
         
-        # Create time array for the rolling window (past 2 minutes)
-        time_points = np.linspace(current_time - self.time_window, current_time, self.time_window * 10)
-        
+        # Compute the start time of the window (subtract seconds)
+        start_time = current_time.addSecs(-self.time_window)
+
+        # Convert QDateTime to float seconds since epoch for plotting
+        start_epoch = start_time.toSecsSinceEpoch()
+        end_epoch = current_time.toSecsSinceEpoch()
+
+        time_points = np.linspace(start_epoch, end_epoch, self.time_window * 10)
+            
         # Calculate LED states for each time point
         red_states = []
         green_states = []
@@ -1267,14 +1286,14 @@ class TrackingPanel(QWidget):
         self.led_ax.axvline(x=self.time_window, color='yellow', linestyle='--', alpha=0.7, linewidth=2)
         
         # Update time labels on x-axis to show actual times
-        current_utc = QDateTime.fromSecsSinceEpoch(int(current_time))
-        start_utc = QDateTime.fromSecsSinceEpoch(int(current_time - self.time_window))
+        current_utc =  current_time.toSecsSinceEpoch()
+        start_utc = start_time.toSecsSinceEpoch()
         
         # Set custom x-axis labels
         x_ticks = np.linspace(0, self.time_window, 5)
         x_labels = []
         for tick in x_ticks:
-            tick_time = QDateTime.fromSecsSinceEpoch(int(current_time - self.time_window + tick))
+            tick_time = current_time.addSecs(int(-self.time_window + tick))
             tick_time.setTimeSpec(Qt.UTC)
             x_labels.append(tick_time.toString("hh:mm:ss"))
         
@@ -1341,11 +1360,12 @@ class TrackingPanel(QWidget):
         self.tracking_enabled = bool(enabled)
     
     def prediction_loop(self):
-        last_time = time.time()
         while True:
             time.sleep(5)
-            now=time.time()
-            dt=now-last_time
-            last_time = now
-            self.ekf.predict(dt)
-            self.pred_lat, self.pred_lon, self.pred_alt = self.ekf.get_state()
+            if self.balloon_lat != 0 and self.balloon_lon != 0:
+                self.ekf.update(
+                    self.balloon_lat, 
+                    self.balloon_lon,
+                    self.balloon_alt
+                )
+                self.pred_lat, self.pred_lon, self.pred_alt = self.ekf.get_state()

@@ -10,6 +10,7 @@ class TelemetryModel(QObject):
     data_updated = pyqtSignal()
     altitude_updated = pyqtSignal(float)
     position_updated = pyqtSignal(float, float, float)  # lat, lon, alt
+    acc_updated = pyqtSignal(float, float, float)
     signal_updated = pyqtSignal(int, int)  # rssi, snr
     ground_station_gps_updated = pyqtSignal(float, float, float)  # lat, lon, alt
     status_indicator_changed = pyqtSignal(str, object)  # indicator_name, new_value
@@ -56,6 +57,10 @@ class TelemetryModel(QObject):
         self.gps_time = 0
         self.gps_valid = False
         
+        self.acc_x = 0.0
+        self.acc_y = 0.0
+        self.acc_z = 0.0
+
         # System status
         self.sd_status = False
         self.led_status = False
@@ -208,6 +213,8 @@ class TelemetryModel(QObject):
         if 'gps_lat' in telemetry_data and 'gps_lon' in telemetry_data:
             self.position_updated.emit(self.gps_lat, self.gps_lon, self.gps_alt)
         
+        if 'acc_x' in telemetry_data and 'acc_y' in telemetry_data and 'acc_z' in telemetry_data:
+            self.acc_updated.emit(self.acc_x, self.acc_y, self.acc_z)
         # Emit packet received signal for table panel display
         self.packet_received.emit(telemetry_data)
     
