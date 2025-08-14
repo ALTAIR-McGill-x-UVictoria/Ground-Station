@@ -22,6 +22,10 @@ import pytz
 from datetime import datetime
 from .EKF_algo.EKF import EKF
 # Import ZWO camera functionality
+CAMERA_AVAILABLE = False
+zwoasi = None
+camera_init_module = None
+
 try:
     sys.path.append(os.path.join(os.path.dirname(__file__), 'ZWO_Trigger'))
     import zwoasi
@@ -108,12 +112,35 @@ try:
     #     pass  # Ignore errors if already stopped
     
     CAMERA_AVAILABLE = True
-    print("ZWO Camera module imported and initialized successfully")
+    print("✅ ZWO Camera module imported and initialized successfully")
     
     def RGB_photo(filename, gain, exposure):
-        camera.set_image_type(zwoasi.ASI_IMG_RGB24)
-        camera.capture(filename=filename)
-        save_control_values(filename, camera.get_control_values())
+        if not CAMERA_AVAILABLE:
+            print("❌ Camera not available. Cannot take photo.")
+            return False
+        try:
+            camera.set_image_type(zwoasi.ASI_IMG_RGB24)
+            camera.capture(filename=filename)
+            save_control_values(filename, camera.get_control_values())
+            return True
+        except Exception as e:
+            print(f"❌ Error taking photo: {e}")
+            return False
+
+except Exception as e:
+    print(f"❌ ZWO Camera not available: {e}")
+    CAMERA_AVAILABLE = False
+    zwoasi = None
+    camera = None
+    
+    # Create dummy functions when camera is not available
+    def RGB_photo(filename, gain, exposure):
+        print("❌ Camera not available. Cannot take photo.")
+        return False
+    
+    def save_control_values(filename, settings):
+        print("❌ Camera not available. Cannot save settings.")
+        return False
         print(f"Captured RGB: {filename} with gain={gain}, exposure={exposure}")
 
 
@@ -295,6 +322,19 @@ class TrackingPanel(QWidget):
 
         # Mount Controller
         self.telescope_controller = TelescopeController()
+        self.telescope_available = self.telescope_controller.ascom_available
+        self.camera_available = CAMERA_AVAILABLE
+        
+        # Log availability status
+        if self.telescope_available:
+            print("✅ Telescope controller available")
+        else:
+            print("❌ Telescope controller not available (ASCOM not found)")
+            
+        if self.camera_available:
+            print("✅ Camera available")
+        else:
+            print("❌ Camera not available (ZWO ASI drivers not found)")
         
     def setup_ui(self):
         main_layout = QVBoxLayout(self)
@@ -814,6 +854,12 @@ class TrackingPanel(QWidget):
         test_capture_button.clicked.connect(self.trigger_camera_capture)
         camera_layout.addWidget(test_capture_button)
         
+        # Disable camera button if camera is not available
+        if not CAMERA_AVAILABLE:
+            test_capture_button.setEnabled(False)
+            test_capture_button.setText("Camera N/A")
+            test_capture_button.setToolTip("ZWO ASI camera drivers not found")
+        
         layout.addWidget(camera_frame)
 
         #Add toggle button for telescope slewing mode tracking/predicting
@@ -1313,15 +1359,19 @@ class TrackingPanel(QWidget):
                     print(f"Triggering camera capture: {filename}")
                     print(f"Camera settings - Gain: {self.camera_gain}, Exposure: {self.camera_exposure}μs")
 
-                    RGB_photo(filename, self.camera_gain, self.camera_exposure)
+                    success = RGB_photo(filename, self.camera_gain, self.camera_exposure)
 
-                    print(f"Camera capture completed: {filename}")
-
-                    # UI updates must run on the main thread
-                    QTimer.singleShot(0, lambda: self.update_camera_status(success=True))
+                    if success:
+                        print(f"Camera capture completed: {filename}")
+                        # UI updates must run on the main thread
+                        QTimer.singleShot(0, lambda: self.update_camera_status(success=True))
+                    else:
+                        print(f"Camera capture failed: {filename}")
+                        QTimer.singleShot(0, lambda: self.update_camera_status(success=False))
 
                 else:
-                    print("Camera not available or not initialized")
+                    print("❌ Camera not available or not initialized")
+                    QTimer.singleShot(0, lambda: self.update_camera_status(success=False))
 
             except Exception as e:
                 print(f"Error during camera capture: {e}")
@@ -1346,7 +1396,14 @@ class TrackingPanel(QWidget):
 
         def threaded_slew():
             try:
-                self.telescope_controller.slew_to(ra_hour, dec_deg)
+                if self.telescope_available:
+                    success = self.telescope_controller.slew_to(ra_hour, dec_deg)
+                    if success:
+                        print(f"✅ Telescope slewed to RA: {ra_hour:.4f}, DEC: {dec_deg:.4f}")
+                    else:
+                        print(f"❌ Failed to slew telescope to RA: {ra_hour:.4f}, DEC: {dec_deg:.4f}")
+                else:
+                    print("❌ Telescope not available. Cannot slew.")
             finally:
                 self.slew_in_progress = False  # Mark slew as done
 

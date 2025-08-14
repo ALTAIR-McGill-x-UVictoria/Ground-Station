@@ -1,0 +1,11 @@
+timestamp_utc=2025-08-12 20:06:26.094000,balloon_lat=0,balloon_lon=0,balloon_alt=0,ground_lat=0.0,ground_lon=0.0,ground_alt=0.0,bearing=0.0,elevation=0.0,distance=0.0,ra=11:56:05.6369338,dec=89:50:20.87392495
+timestamp_utc=2025-08-12 20:06:26.514000,balloon_lat=0,balloon_lon=0,balloon_alt=0,ground_lat=0.0,ground_lon=0.0,ground_alt=0.0,bearing=0.0,elevation=0.0,distance=0.0,ra=11:56:05.6369338,dec=89:50:20.87392495
+timestamp_utc=2025-08-12 20:06:27.523000,balloon_lat=0,balloon_lon=0,balloon_alt=0,ground_lat=0.0,ground_lon=0.0,ground_alt=0.0,bearing=0.0,elevation=0.0,distance=0.0,ra=11:56:05.6369338,dec=89:50:20.87392495
+timestamp_utc=2025-08-12 20:06:28.547000,balloon_lat=0,balloon_lon=0,balloon_alt=0,ground_lat=0.0,ground_lon=0.0,ground_alt=0.0,bearing=0.0,elevation=0.0,distance=0.0,ra=11:56:05.6369338,dec=89:50:20.87392495
+timestamp_utc=2025-08-12 20:06:29.592000,balloon_lat=0,balloon_lon=0,balloon_alt=0,ground_lat=0.0,ground_lon=0.0,ground_alt=0.0,bearing=0.0,elevation=0.0,distance=0.0,ra=11:56:05.6369338,dec=89:50:20.87392495
+timestamp_utc=2025-08-12 20:06:30.568000,balloon_lat=0,balloon_lon=0,balloon_alt=0,ground_lat=0.0,ground_lon=0.0,ground_alt=0.0,bearing=0.0,elevation=0.0,distance=0.0,ra=11:56:05.6369338,dec=89:50:20.87392495
+timestamp_utc=2025-08-12 20:06:31.564000,balloon_lat=0,balloon_lon=0,balloon_alt=0,ground_lat=0.0,ground_lon=0.0,ground_alt=0.0,bearing=0.0,elevation=0.0,distance=0.0,ra=11:56:05.6369338,dec=89:50:20.87392495
+timestamp_utc=2025-08-12 20:06:32.577000,balloon_lat=0,balloon_lon=0,balloon_alt=0,ground_lat=0.0,ground_lon=0.0,ground_alt=0.0,bearing=0.0,elevation=0.0,distance=0.0,ra=11:56:05.6369338,dec=89:50:20.87392495
+timestamp_utc=2025-08-12 20:06:33.555000,balloon_lat=0,balloon_lon=0,balloon_alt=0,ground_lat=0.0,ground_lon=0.0,ground_alt=0.0,bearing=0.0,elevation=0.0,distance=0.0,ra=11:56:05.6369338,dec=89:50:20.87392495
+timestamp_utc=2025-08-12 20:06:34.542000,balloon_lat=0,balloon_lon=0,balloon_alt=0,ground_lat=0.0,ground_lon=0.0,ground_alt=0.0,bearing=0.0,elevation=0.0,distance=0.0,ra=11:56:05.6369338,dec=89:50:20.87392495
+timestamp_utc=2025-08-12 20:06:35.541000,balloon_lat=0,balloon_lon=0,balloon_alt=0,ground_lat=0.0,ground_lon=0.0,ground_alt=0.0,bearing=0.0,elevation=0.0,distance=0.0,ra=11:56:05.6369338,dec=89:50:20.87392495

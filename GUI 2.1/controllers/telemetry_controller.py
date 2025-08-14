@@ -324,109 +324,74 @@ class TelemetryController(QObject):
         try:
             values = data.split(',')
             print(f"FC packet has {len(values)} fields")
-            
-            if len(values) < 30:  # Reduced minimum requirement for robustness
-                print(f"Warning: FC packet has only {len(values)} fields, expected at least 30")
-                # Still try to process it with available fields
-            
-            # Helper function to safely parse values
-            def safe_int(val, default=0):
+            if len(values) < 39:
+                print(f"Warning: FC packet has only {len(values)} fields, expected at least 39")
+            def safe_int(idx, default=0):
                 try:
-                    return int(val) if val and val.strip() else default
-                except (ValueError, TypeError):
+                    return int(values[idx]) if idx < len(values) and values[idx].strip() else default
+                except (ValueError, IndexError):
                     return default
-            
-            def safe_float(val, default=0.0):
+            def safe_float(idx, default=0.0):
                 try:
-                    return float(val) if val and val.strip() else default
-                except (ValueError, TypeError):
+                    return float(values[idx]) if idx < len(values) and values[idx].strip() else default
+                except (ValueError, IndexError):
                     return default
-            
-            def safe_bool(val, default=False):
+            def safe_bool(idx, default=False):
                 try:
-                    return bool(int(val)) if val and val.strip() else default
-                except (ValueError, TypeError):
+                    return bool(int(values[idx])) if idx < len(values) and values[idx].strip() else default
+                except (ValueError, IndexError):
                     return default
-            
-            # Parse according to the exact packet structure from your C code
             fc_data = {
-                # Basic fields (0-2)
-                'ack': safe_int(values[0]) if len(values) > 0 else 0,
-                'rssi': safe_int(values[1]) if len(values) > 1 else 0,
-                'snr': safe_int(values[2]) if len(values) > 2 else 0,
-                
-                # FC time (3-4) - note field 3 is empty in your format
-                'fc_unix_time_usec': safe_int(values[3]) if len(values) > 3 else 0,  # Empty in format
-                'fc_boot_time_ms': safe_int(values[4]) if len(values) > 4 else 0,
-                
-                # Pixhawk GPS (5-9)
-                'gps_lat': safe_float(values[5]) if len(values) > 5 else 0.0,
-                'gps_lon': safe_float(values[6]) if len(values) > 6 else 0.0,
-                'gps_alt': safe_float(values[7]) if len(values) > 7 else 0.0,
-                'ground_speed': safe_float(values[8]) if len(values) > 8 else 0.0,
-                'gps_time': safe_float(values[9]) if len(values) > 9 else 0.0,
-                
-                # FC IMU (10-12) - empty in your format
-                # 'abs_pressure1': safe_float(values[10]) if len(values) > 10 else 0.0,
-                # 'temperature1': safe_float(values[11]) if len(values) > 11 else 0.0,
-                # 'altitude1': safe_float(values[12]) if len(values) > 12 else 0.0,
-                
-                # Pixhawk IMU (13-15)
-                'abs_pressure2': safe_float(values[10]) if len(values) > 10 else 0.0,
-                'temperature2': safe_float(values[11]) if len(values) > 11 else 0.0,
-                'diff_pressure2': safe_float(values[12]) if len(values) > 12 else 0.0,
-                
-                'acc_x': safe_float(values[13]) if len(values) > 13 else 0.0,
-                'acc_y': safe_float(values[14]) if len(values) > 14 else 0.0,
-                'acc_z': safe_float(values[15]) if len(values) > 15 else 0.0,
-                # FC Status (16-17)
-                'sd_status': safe_bool(values[16]) if len(values) > 16 else False,
-                'actuator_status': safe_bool(values[17]) if len(values) > 17 else False,
-                
-                # Pixhawk Status (18-20)
-                'logging_active': safe_bool(values[18]) if len(values) > 18 else False,
-                'write_rate': safe_int(values[19]) if len(values) > 19 else 0,
-                'space_left': safe_int(values[20]) if len(values) > 20 else 0,
-                
-                # Pixhawk Time (21-22) - note field 21 is empty
-                'pix_unix_time_usec': safe_int(values[21]) if len(values) > 21 else 0,  # Empty in format
-                'pix_boot_time_ms': safe_int(values[22]) if len(values) > 22 else 0,
-                
-                # Navigation (29-30) - skipping vibration fields 23-28
-                'gps_bearing': safe_float(values[29]) if len(values) > 29 else 0.0,
-                'gps_bearing_magnetic': safe_float(values[30]) if len(values) > 30 else 0.0,
-                
-                # Photodiodes (35-36) - skipping unused fields 31-34
-                'photodiode_value1': safe_int(values[35]) if len(values) > 35 else 0,
-                'photodiode_value2': safe_int(values[36]) if len(values) > 36 else 0,
-                
-                # Battery voltages (37-38)
-                'fc_battery_voltage': safe_float(values[37]) if len(values) > 37 else 0.0,
-                'led_battery_voltage': safe_float(values[38]) if len(values) > 38 else 0.0,
-                
-                # Derived fields for compatibility
-                'gps_valid': safe_float(values[5]) != 0.0 and safe_float(values[6]) != 0.0 if len(values) > 6 else False,
-                'altitude': safe_float(values[7]) if len(values) > 7 else 0.0,  # Use GPS altitude
-                'pressure': safe_float(values[13]) if len(values) > 13 else 0.0,  # Use Pixhawk pressure
-                'temperature': safe_float(values[14]) if len(values) > 14 else 0.0,  # Use Pixhawk temperature
+                'ack': safe_int(0),
+                'rssi': safe_int(1),
+                'snr': safe_int(2),
+                # field 3: unused (fc_unix_time_usec)
+                'fc_boot_time_ms': safe_int(4),
+                'gps_lat': safe_float(5),
+                'gps_lon': safe_float(6),
+                'gps_alt': safe_float(7),
+                'ground_speed': safe_float(8),
+                'gps_time': safe_float(9),
+                # fields 10-12: Pixhawk IMU (absPressure2, temperature2, gpsAlt2)
+                'abs_pressure2': safe_float(10),
+                'temperature2': safe_float(11),
+                'imu_altitude2': safe_float(12),
+                # fields 13-15: Pixhawk Acceleration
+                'acc_x': safe_float(13),
+                'acc_y': safe_float(14),
+                'acc_z': safe_float(15),
+                # FC Status
+                'sd_status': safe_bool(16),
+                'actuator_status': safe_bool(17),
+                # Pixhawk Status
+                'logging_active': safe_bool(18),
+                'write_rate': safe_int(19),
+                'space_left': safe_int(20),
+                # fields 21-22: unused (pix_unix_time_usec, pix_boot_time_ms)
+                # fields 23-28: unused (vibration)
+                'gps_bearing': safe_float(29),
+                # field 30: unused (gpsBearingMagnetic)
+                # fields 31-34: unused (other bearings/speeds)
+                'photodiode_value1': safe_int(35),
+                'photodiode_value2': safe_int(36),
+                'fc_battery_voltage': safe_float(37),
+                'led_battery_voltage': safe_float(38),
+                # Derived/compatibility fields
+                'gps_valid': safe_float(5) != 0.0 and safe_float(6) != 0.0,
+                'altitude': safe_float(7),  # Use GPS altitude as primary altitude
+                'pressure': safe_float(10), # Use absPressure2
+                'temperature': safe_float(11), # Use temperature2
             }
-            
             print(f"FC parsed: RSSI={fc_data['rssi']}, GPS=({fc_data['gps_lat']:.6f},{fc_data['gps_lon']:.6f}), Alt={fc_data['altitude']:.2f}")
-            
-            # Update telemetry model - use the generic update method
             self.telemetry_model.update_telemetry(fc_data)
-            
-            # Emit GPS update signal if valid
             if fc_data['gps_valid']:
                 self.gps_updated.emit(
                     fc_data['gps_lat'],
                     fc_data['gps_lon'],
                     fc_data['gps_alt']
                 )
-            
             self.packet_parsed.emit(True, f"Flight computer telemetry received ({len(values)} fields)")
             return True
-            
         except Exception as e:
             print(f"FC packet parse error: {str(e)}")
             import traceback
