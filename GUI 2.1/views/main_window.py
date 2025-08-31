@@ -98,6 +98,9 @@ class MainWindow(QMainWindow):
         # Set a fixed width for the command panel as in gui.py
         self.command_panel.setFixedWidth(self.settings_model.get('panels.command_width', 300))
 
+        # Connect tracking panel to command panel for mount port selection
+        self.tracking_panel.set_mount_port_getter(self.command_panel.get_selected_mount_port)
+
         # Splitter to manage left and right sections
         splitter = QSplitter(Qt.Horizontal)
         

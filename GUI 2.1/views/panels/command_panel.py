@@ -68,8 +68,9 @@ class CommandPanel(QWidget):
         group = QGroupBox("Connection")
         layout = QVBoxLayout(group)
         
+        # Serial port selection
         port_layout = QHBoxLayout()
-        port_layout.addWidget(QLabel("Port:"))
+        port_layout.addWidget(QLabel("Serial Port:"))
         self.port_selector = QComboBox()
         self.refresh_ports()
         port_layout.addWidget(self.port_selector, 1)
@@ -78,6 +79,18 @@ class CommandPanel(QWidget):
         refresh_button.clicked.connect(self.refresh_ports)
         port_layout.addWidget(refresh_button)
         layout.addLayout(port_layout)
+        
+        # Mount COM port selection
+        mount_layout = QHBoxLayout()
+        mount_layout.addWidget(QLabel("Mount COM:"))
+        self.mount_port_selector = QComboBox()
+        self.refresh_mount_ports()
+        mount_layout.addWidget(self.mount_port_selector, 1)
+        
+        mount_refresh_button = QPushButton("Refresh")
+        mount_refresh_button.clicked.connect(self.refresh_mount_ports)
+        mount_layout.addWidget(mount_refresh_button)
+        layout.addLayout(mount_layout)
         
         self.connect_button = QPushButton("Connect")
         self.connect_button.clicked.connect(self.toggle_connection)
@@ -168,6 +181,27 @@ class CommandPanel(QWidget):
             index = self.port_selector.findText(self.connection_model.get_port())
             if index >= 0:
                 self.port_selector.setCurrentIndex(index)
+
+    def refresh_mount_ports(self):
+        """Refresh the mount COM port selector"""
+        current_port = self.mount_port_selector.currentText()
+        self.mount_port_selector.clear()
+        
+        # Get available ports
+        ports = self.serial_controller.get_available_ports()
+        self.mount_port_selector.addItems(ports)
+        
+        # Set default to COM10 if available, otherwise restore previous selection
+        if "COM10" in ports:
+            index = self.mount_port_selector.findText("COM10")
+            self.mount_port_selector.setCurrentIndex(index)
+        elif current_port and current_port in ports:
+            index = self.mount_port_selector.findText(current_port)
+            self.mount_port_selector.setCurrentIndex(index)
+        
+    def get_selected_mount_port(self):
+        """Get the currently selected mount COM port"""
+        return self.mount_port_selector.currentText() if hasattr(self, 'mount_port_selector') else "COM10"
 
     def toggle_connection(self):
         if not self.connection_model.is_connected():

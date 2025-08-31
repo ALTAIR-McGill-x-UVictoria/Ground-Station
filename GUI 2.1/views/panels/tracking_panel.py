@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, 
-    QFrame, QGroupBox, QSizePolicy, QSpacerItem, QSpinBox, QDoubleSpinBox, QPushButton
+    QFrame, QGroupBox, QSizePolicy, QSpacerItem, QSpinBox, QDoubleSpinBox, QPushButton, QMessageBox
 )
 from PyQt5.QtCore import QDateTime, QTimeZone, Qt, QTimer, QDateTime
 from PyQt5.QtGui import QFont, QColor, QPalette
@@ -13,14 +13,19 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 import os
 import sys
-from controllers.telescope_controller import TelescopeController
-from astropy.coordinates import SkyCoord, EarthLocation, AltAz
-from astropy.time import Time
-import astropy.units as u
 from views.widgets.compass_widget import CompassWidget
 import pytz
 from datetime import datetime
 from .EKF_algo.EKF import EKF
+
+# Celestron mount control
+try:
+    import nexstar as ns
+    NEXSTAR_AVAILABLE = True
+    print("Nexstar module imported successfully")
+except ImportError as e:
+    print(f"Nexstar module not available: {e}")
+    NEXSTAR_AVAILABLE = False
 # Import ZWO camera functionality
 try:
     sys.path.append(os.path.join(os.path.dirname(__file__), 'ZWO_Trigger'))
@@ -226,8 +231,6 @@ class StatusIndicator(QFrame):
 
 
 class TrackingPanel(QWidget):
-
-
     """Panel for balloon tracking visualization and ground station operations"""
     
     def __init__(self, telemetry_model, map_controller, parent=None):
@@ -246,6 +249,23 @@ class TrackingPanel(QWidget):
         self.elevation = 0.0
         self.distance = 0.0
         self.slew_in_progress = False
+        
+        # Mount tracking data (azimuth/altitude)
+        self.target_azimuth = 0.0
+        self.target_altitude = 0.0
+        self.current_azimuth = 0.0
+        self.current_altitude = 0.0
+        
+        # Smart positioning to prevent oscillation
+        self.last_sent_azimuth = None
+        self.last_sent_altitude = None
+        self.position_tolerance = 0.5  # degrees - minimum change required to send new position
+        self.mount_settled_tolerance = 1.0  # degrees - tolerance for considering mount "at target"
+        self.mount_at_target = False
+        
+        # Manual mount control mode
+        self.manual_control_mode = False  # False = auto tracking, True = manual control
+        
         # Variables for tracking LED status and exposure timing
         self.last_minute = -1  # Track minute changes
         self.last_exposure_check = -1  # Track exposure timing
@@ -259,7 +279,6 @@ class TrackingPanel(QWidget):
         self.camera_exposure = 30000  # Default exposure in microseconds
         self.image_counter = 0  # Counter for unique filenames
         
-        # self.tracking_enabled = True  # False for tracking, True for predicting 
         self.log_dir = os.path.join(os.path.dirname(__file__), '../../logs')
         os.makedirs(self.log_dir, exist_ok=True)
         now = datetime.utcnow().strftime('%Y-%m-%d %H-%M-%S')
@@ -293,10 +312,346 @@ class TrackingPanel(QWidget):
         self.led_plot_timer.timeout.connect(self.update_led_timing_plot)
         self.led_plot_timer.start(100)  # Update plot every 100ms for smooth animation
 
-        # Mount Controller
-        self.telescope_controller = TelescopeController()
+        # Celestron Mount Controller
+        self.mount = None
+        self.mount_port = "COM10"  # Default port
+        self.mount_connected = False
+        self.mount_port_getter = None  # Function to get current mount port selection
+        self.init_mount_connection()
+    
+    def set_mount_port_getter(self, port_getter_func):
+        """Set a function that returns the currently selected mount port"""
+        self.mount_port_getter = port_getter_func
+    
+    def get_current_mount_port(self):
+        """Get the current mount port, either from the getter function or the default"""
+        if self.mount_port_getter:
+            try:
+                return self.mount_port_getter()
+            except:
+                pass
+        return self.mount_port
         
+    def init_mount_connection(self):
+        """Initialize connection to Celestron mount"""
+        if not NEXSTAR_AVAILABLE:
+            print("Nexstar module not available - mount control disabled")
+            return
+            
+        try:
+            current_port = self.get_current_mount_port()
+            print(f"Attempting to connect to Celestron mount on {current_port}...")
+            self.mount = ns.NexstarHandController(current_port)
+            
+            # Test connection by getting mount model
+            try:
+                model = self.mount.getModel()
+                print(f"✓ Mount connected successfully! Model: {model}")
+                self.mount_connected = True
+                self.mount_port = current_port  # Update the stored port
+            except Exception as e:
+                print(f"✗ Mount connection test failed: {e}")
+                self.mount_connected = False
+                self.mount = None
+                
+        except Exception as e:
+            print(f"✗ Failed to connect to mount: {e}")
+            self.mount_connected = False
+            self.mount = None
+        
+        # Update manual control button states
+        self.update_manual_control_states()
+    
+    def reconnect_mount(self):
+        """Reconnect to mount with current port selection"""
+        if self.mount_connected and self.mount:
+            try:
+                # Close current connection
+                self.mount.close() if hasattr(self.mount, 'close') else None
+            except:
+                pass
+        
+        self.mount = None
+        self.mount_connected = False
+        self.init_mount_connection()
+        return self.mount_connected
+    
+    def update_manual_control_states(self):
+        """Update the enabled state of manual control buttons based on mount connection"""
+        if hasattr(self, 'goto_button'):
+            self.goto_button.setEnabled(self.mount_connected)
+            self.reset_button.setEnabled(self.mount_connected)
+            self.get_position_button.setEnabled(self.mount_connected)
+            self.reconnect_mount_button.setEnabled(True)  # Always enabled
+            self.mode_toggle_button.setEnabled(True)  # Always enabled
+    
+    def move_to_azalt_position(self, azimuth, altitude):
+        """Move mount to specific azimuth/altitude position"""
+        if not self.mount_connected or self.mount is None:
+            print("Mount not connected - cannot move")
+            return False
+            
+        try:
+            print(f"Moving mount to: Az={azimuth:.2f}°, Alt={altitude:.2f}°")
+            
+            self.mount.gotoPosition(
+                firstCoordinate=azimuth,
+                secondCoordinate=altitude,
+                coordinateMode=ns.NexstarCoordinateMode.AZM_ALT,
+                highPrecisionFlag=True
+            )
+            
+            self.target_azimuth = azimuth
+            self.target_altitude = altitude
+            return True
+            
+        except Exception as e:
+            print(f"Error moving mount: {e}")
+            return False
+    
+    def move_to_azalt_position_precise(self, azimuth, altitude, precision_threshold=1.0):
+        """
+        Move mount to specific azimuth/altitude position with precision control
+        Uses optimized approach to reduce overshooting without blocking UI
+        """
+        if not self.mount_connected or self.mount is None:
+            print("Mount not connected - cannot move")
+            return False
+        
+        try:
+            # Get current position
+            current_az, current_alt = self.get_mount_position()
+            if current_az is None or current_alt is None:
+                print("Cannot get current position - using direct move")
+                return self.move_to_azalt_position(azimuth, altitude)
+            
+            # Calculate distance to target
+            az_diff = azimuth - current_az
+            alt_diff = altitude - current_alt
+            
+            # Handle azimuth wraparound
+            if az_diff > 180:
+                az_diff -= 360
+            elif az_diff < -180:
+                az_diff += 360
+            
+            total_distance = math.sqrt(az_diff**2 + alt_diff**2)
+            print(f"Current: Az={current_az:.2f}°, Alt={current_alt:.2f}°")
+            print(f"Target: Az={azimuth:.2f}°, Alt={altitude:.2f}°")
+            print(f"Distance: {total_distance:.2f}°")
+            
+            # If we're already close enough, don't move
+            if total_distance < 0.1:
+                print("Already at target position")
+                return True
+            
+            # For large movements (>15°), use a single intermediate step approach
+            if total_distance > 15.0:
+                print("Large movement detected - using intermediate positioning")
+                return self._intermediate_movement(current_az, current_alt, azimuth, altitude)
+            
+            # For medium movements (5-15°), use approach with lower precision
+            elif total_distance > 5.0:
+                print("Medium movement detected - using reduced precision")
+                return self._reduced_precision_movement(azimuth, altitude)
+            
+            # For small movements (<5°), use direct precise movement
+            else:
+                print("Small movement detected - using direct precise movement")
+                return self._direct_precise_movement(azimuth, altitude)
+                
+        except Exception as e:
+            print(f"Error in precise movement: {e}")
+            # Fallback to direct movement
+            return self.move_to_azalt_position(azimuth, altitude)
+    
+    def _intermediate_movement(self, start_az, start_alt, target_az, target_alt):
+        """Move to intermediate point then final target (non-blocking)"""
+        try:
+            az_diff = target_az - start_az
+            alt_diff = target_alt - start_alt
+            
+            # Handle azimuth wraparound
+            if az_diff > 180:
+                az_diff -= 360
+            elif az_diff < -180:
+                az_diff += 360
+            
+            # Move to 80% of the way to reduce final overshoot
+            intermediate_az = start_az + (az_diff * 0.8)
+            intermediate_alt = start_alt + (alt_diff * 0.8)
+            
+            # Normalize azimuth
+            while intermediate_az < 0:
+                intermediate_az += 360
+            while intermediate_az >= 360:
+                intermediate_az -= 360
+            
+            # Clamp altitude
+            intermediate_alt = max(-90, min(90, intermediate_alt))
+            
+            print(f"Intermediate positioning to Az={intermediate_az:.2f}°, Alt={intermediate_alt:.2f}°")
+            
+            # Move to intermediate position first
+            success = self.move_to_azalt_position(intermediate_az, intermediate_alt)
+            if not success:
+                return False
+            
+            # Schedule final movement after a delay (non-blocking)
+            def final_move():
+                time.sleep(3)  # Wait for intermediate movement to settle
+                print(f"Final positioning to Az={target_az:.2f}°, Alt={target_alt:.2f}°")
+                self._reduced_precision_movement(target_az, target_alt)
+            
+            # Run final movement in separate thread to avoid blocking UI
+            threading.Thread(target=final_move, daemon=True).start()
+            return True
+            
+        except Exception as e:
+            print(f"Error in intermediate movement: {e}")
+            return False
+    
+    def _reduced_precision_movement(self, azimuth, altitude):
+        """Movement with reduced precision to minimize overshoot"""
+        try:
+            print(f"Reduced precision movement to Az={azimuth:.2f}°, Alt={altitude:.2f}°")
+            
+            self.mount.gotoPosition(
+                firstCoordinate=azimuth,
+                secondCoordinate=altitude,
+                coordinateMode=ns.NexstarCoordinateMode.AZM_ALT,
+                highPrecisionFlag=False  # Use lower precision to reduce overshoot
+            )
+            
+            self.target_azimuth = azimuth
+            self.target_altitude = altitude
+            return True
+            
+        except Exception as e:
+            print(f"Error in reduced precision movement: {e}")
+            return False
+    
+    def _direct_precise_movement(self, azimuth, altitude):
+        """Direct movement for small adjustments with verification"""
+        try:
+            # Use lower precision flag for small movements to reduce overshooting
+            print(f"Direct precise movement to Az={azimuth:.2f}°, Alt={altitude:.2f}°")
+            
+            self.mount.gotoPosition(
+                firstCoordinate=azimuth,
+                secondCoordinate=altitude,
+                coordinateMode=ns.NexstarCoordinateMode.AZM_ALT,
+                highPrecisionFlag=False  # Use lower precision for small movements
+            )
+            
+            self.target_azimuth = azimuth
+            self.target_altitude = altitude
+            return True
+            
+        except Exception as e:
+            print(f"Error in direct precise movement: {e}")
+            return False
+    
+    def get_mount_position(self):
+        """Get current mount position"""
+        if not self.mount_connected or self.mount is None:
+            return None, None
+            
+        try:
+            az, alt = self.mount.getPosition(
+                coordinateMode=ns.NexstarCoordinateMode.AZM_ALT,
+                highPrecisionFlag=True
+            )
+            self.current_azimuth = az
+            self.current_altitude = alt
+            return az, alt
+            
+        except Exception as e:
+            print(f"Error getting mount position: {e}")
+            return None, None
+    
+    def is_mount_moving(self):
+        """Check if mount is currently moving"""
+        if not self.mount_connected or self.mount is None:
+            return False
+            
+        try:
+            return self.mount.getGotoInProgress()
+        except Exception as e:
+            print(f"Error checking mount movement: {e}")
+            return False
+    
+    def should_send_new_position(self, target_az, target_alt):
+        """Determine if we should send a new position to the mount"""
+        # If we've never sent a position, send it
+        if self.last_sent_azimuth is None or self.last_sent_altitude is None:
+            return True
+        
+        # Calculate change from last sent position
+        az_change = abs(target_az - self.last_sent_azimuth)
+        alt_change = abs(target_alt - self.last_sent_altitude)
+        
+        # Handle azimuth wraparound (359° to 1° is only 2° change, not 358°)
+        if az_change > 180:
+            az_change = 360 - az_change
+        
+        # Check if change is significant enough
+        significant_change = (az_change >= self.position_tolerance or 
+                            alt_change >= self.position_tolerance)
+        
+        if significant_change:
+            print(f"Significant position change detected: Az Δ{az_change:.2f}°, Alt Δ{alt_change:.2f}°")
+            return True
+        
+        # Check if mount is still moving to the last target
+        if self.is_mount_moving():
+            return False  # Don't send new position while moving
+        
+        # Check if mount is at the target position
+        current_az, current_alt = self.get_mount_position()
+        if current_az is not None and current_alt is not None:
+            az_error = abs(current_az - target_az)
+            alt_error = abs(current_alt - target_alt)
+            
+            # Handle azimuth wraparound
+            if az_error > 180:
+                az_error = 360 - az_error
+                
+            if az_error <= self.mount_settled_tolerance and alt_error <= self.mount_settled_tolerance:
+                if not self.mount_at_target:
+                    print(f"Mount reached target position within tolerance (Az±{az_error:.2f}°, Alt±{alt_error:.2f}°)")
+                    self.mount_at_target = True
+                return False  # Mount is at target, don't send again
+            else:
+                self.mount_at_target = False
+        
+        return False
+    
+    def update_last_sent_position(self, azimuth, altitude):
+        """Update the last sent position tracking"""
+        self.last_sent_azimuth = azimuth
+        self.last_sent_altitude = altitude
+        self.mount_at_target = False  # Reset since we're sending a new position
+    
+    def set_position_tolerance(self, tolerance_degrees):
+        """Set the minimum position change required to send new coordinates"""
+        self.position_tolerance = max(0.1, tolerance_degrees)  # Minimum 0.1 degrees
+        print(f"Position tolerance set to {self.position_tolerance:.1f}°")
+    
+    def set_settled_tolerance(self, tolerance_degrees):
+        """Set the tolerance for considering the mount 'at target'"""
+        self.mount_settled_tolerance = max(0.1, tolerance_degrees)  # Minimum 0.1 degrees
+        print(f"Mount settled tolerance set to {self.mount_settled_tolerance:.1f}°")
+    
+    def force_new_position(self, azimuth, altitude):
+        """Force the mount to move to a new position regardless of tolerances"""
+        print(f"Force positioning to Az={azimuth:.2f}°, Alt={altitude:.2f}°")
+        self.last_sent_azimuth = None  # Reset to force movement
+        self.last_sent_altitude = None
+        self.safe_slew_azalt(azimuth, altitude)
+    
     def setup_ui(self):
+        """Set up the user interface for the tracking panel"""
         main_layout = QVBoxLayout(self)
         main_layout.setSpacing(8)
         main_layout.setContentsMargins(8, 8, 8, 8)
@@ -314,6 +669,10 @@ class TrackingPanel(QWidget):
         content_layout.addWidget(right_column, 1)  # Equal space for status
         
         main_layout.addLayout(content_layout)
+        
+        # Add manual mount control section
+        mount_control_section = self.create_manual_mount_control_section()
+        main_layout.addWidget(mount_control_section)
         
         # Add LED timing plot
         led_plot_section = self.create_led_timing_plot()
@@ -513,14 +872,27 @@ class TrackingPanel(QWidget):
             'elevation': self.elevation,
             'distance': self.distance,
         }
-        # Add celestial coordinates if available
+        # Add target mount coordinates
         try:
-            ra, dec = self.calculate_celestial_coordinates()
-            data['ra'] = ra.to_string(unit=u.hour, sep=':')
-            data['dec'] = dec.to_string(unit=u.deg, sep=':')
+            target_az, target_alt = self.calculate_target_coordinates()
+            data['target_azimuth'] = f'{target_az:.2f}'
+            data['target_altitude'] = f'{target_alt:.2f}'
+            
+            # Add current mount position if available
+            current_az, current_alt = self.get_mount_position()
+            if current_az is not None and current_alt is not None:
+                data['mount_azimuth'] = f'{current_az:.2f}'
+                data['mount_altitude'] = f'{current_alt:.2f}'
+            else:
+                data['mount_azimuth'] = 'N/A'
+                data['mount_altitude'] = 'N/A'
+                
         except Exception as e:
-            data['ra'] = 'N/A'
-            data['dec'] = 'N/A'
+            data['target_azimuth'] = 'N/A'
+            data['target_altitude'] = 'N/A'
+            data['mount_azimuth'] = 'N/A'
+            data['mount_altitude'] = 'N/A'
+            
         # Write as a single line (CSV style)
         with open(self.log_file, 'a') as f:
             f.write(','.join(f'{k}={v}' for k, v in data.items()) + '\n')
@@ -966,34 +1338,26 @@ class TrackingPanel(QWidget):
             elevation = 0
         return bearing, elevation, distance
     
-    def calculate_celestial_coordinates(self, bearing=None, elevation=None):
-        """Calculate right ascension and declination using astropy"""
-        # Observer location (your ground station)
-        observer = EarthLocation(lat=self.ground_lat*u.deg, lon=self.ground_lon*u.deg, height=self.ground_alt*u.m)
-        # local_dt = self.get_current_utc_time().toPyDateTime()
-        if hasattr(self.telemetry_model, gs+)
-        time = Time(self.telemetry_model.gs_gps_utc_unix, format='unix')
+    def calculate_target_coordinates(self, bearing=None, elevation=None):
+        """Calculate target azimuth and altitude for mount tracking"""
         if bearing is None:
             bearing = self.bearing
         if elevation is None:
             elevation = self.elevation
-        # Balloon's position as seen from observer
-        balloon_altaz = SkyCoord(
-            az = bearing*u.deg,
-            alt = elevation*u.deg,
-            frame=AltAz(obstime = time, location=observer)
-        )
-
-        # Convert to RA/DEC (Equatorial coordinates)
-        sky_coord = balloon_altaz.transform_to('icrs')  # ICRS = RA/DEC J2000 frame
-
-        ra = sky_coord.ra
-        dec = sky_coord.dec
-
-        print(f"RA: {ra.to_string(unit=u.hour)}")
-        print(f"DEC: {dec.to_string(unit=u.deg)}")
-
-        return ra, dec
+            
+        # Convert bearing to azimuth (bearing is typically from north, azimuth from north clockwise)
+        azimuth = bearing
+        altitude = elevation
+        
+        # Ensure azimuth is in 0-360 range
+        azimuth = azimuth % 360.0
+        
+        # Ensure altitude is in valid range (-90 to 90)
+        altitude = max(-90.0, min(90.0, altitude))
+        
+        print(f"Target coordinates - Azimuth: {azimuth:.2f}°, Altitude: {altitude:.2f}°")
+        
+        return azimuth, altitude
     
 
     def update_displays(self):
@@ -1006,17 +1370,41 @@ class TrackingPanel(QWidget):
         self.elevation_label.setText(f"{self.elevation:.1f}°")
         self.distance_label.setText(f"{self.distance:.2f} km")
 
-        # Slew the telescope mount to the calculated RA/DEC
-        # Convert RA to hours as float, DEC to degrees as float
+        # Calculate target azimuth/altitude for mount
         if self.tracking_enabled:
-            ra, dec = self.calculate_celestial_coordinates()
+            target_az, target_alt = self.calculate_target_coordinates()
         else:
+            # Use predicted coordinates
             pb, pe, _ = self.calculate_parameters_for(self.pred_lat, self.pred_lon, self.pred_alt)
-            ra, dec = self.calculate_celestial_coordinates(pb, pe)
+            target_az, target_alt = self.calculate_target_coordinates(pb, pe)
             self.pred_bearing_label.setText(f"{pb:.1f}°")  
 
-        self.ra_label.setText(ra.to_string(unit=u.hour, sep=':'))
-        self.dec_label.setText(dec.to_string(unit=u.deg, sep=':'))
+        # Update coordinate displays (using azimuth/altitude instead of RA/DEC)
+        self.ra_label.setText(f"{target_az:.2f}°")  # Reuse RA label for azimuth
+        # Update coordinate displays (using azimuth/altitude instead of RA/DEC)
+        self.ra_label.setText(f"Az: {target_az:.2f}°")  # Reuse RA label for azimuth
+        self.dec_label.setText(f"Alt: {target_alt:.2f}°")  # Reuse DEC label for altitude
+        
+        # Update mount status information
+        current_az, current_alt = self.get_mount_position()
+        if current_az is not None and current_alt is not None:
+            mount_status = f"Mount: Az {current_az:.1f}°, Alt {current_alt:.1f}°"
+            if self.mount_at_target:
+                mount_status += " (At Target)"
+            elif self.is_mount_moving():
+                mount_status += " (Moving)"
+            else:
+                mount_status += " (Stationary)"
+            
+            # You could add this to a status label if available
+            # self.mount_status_label.setText(mount_status)
+            
+        else:
+            mount_status = "Mount: Position Unknown"
+        
+        # Update manual mount control display
+        if hasattr(self, 'current_az_label') and hasattr(self, 'current_alt_label'):
+            self.update_mount_position_display()
 
         # Log tracking data
         self.log_tracking_data()
@@ -1056,8 +1444,9 @@ class TrackingPanel(QWidget):
         # Update LED status based on UTC time (after other status updates)
         self.update_led_status()
 
-        if time.time() - self.last_pred_slew_time >= 5:
-            self.safe_slew(ra.hour, dec.degree)
+        # Move mount to target position (throttled to every 5 seconds) - only in auto tracking mode
+        if not self.manual_control_mode and time.time() - self.last_pred_slew_time >= 5:
+            self.safe_slew_azalt(target_az, target_alt)
             self.last_pred_slew_time = time.time()
 
     def update_status_indicators(self):
@@ -1150,6 +1539,337 @@ class TrackingPanel(QWidget):
             # Show green indicator for "Tracking LED on"
             print("DEBUG: Setting Tracking LED On (Green)")
             self.status3.set_custom_status("Tracking LED On", "#00ff00")  # Green
+    
+    def create_manual_mount_control_section(self):
+        """Create manual mount control section with azimuth/altitude input and reset button"""
+        group = QGroupBox("Manual Mount Control")
+        group.setStyleSheet("""
+            QGroupBox {
+                border: 2px solid #3a3a3a;
+                border-radius: 6px;
+                margin-top: 1ex;
+                font-weight: bold;
+                color: #ffaa00;
+                font-size: 12px;
+                padding-top: 15px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top center;
+                padding: 0 5px;
+            }
+        """)
+        
+        layout = QHBoxLayout(group)
+        layout.setSpacing(15)
+        layout.setContentsMargins(10, 15, 10, 10)
+        
+        # Current position display
+        current_frame = QFrame()
+        current_frame.setFrameStyle(QFrame.Box | QFrame.Raised)
+        current_frame.setStyleSheet("""
+            QFrame {
+                border: 1px solid #3a3a3a;
+                border-radius: 4px;
+                background-color: #2a2a2a;
+                padding: 5px;
+            }
+        """)
+        current_layout = QVBoxLayout(current_frame)
+        current_layout.setSpacing(5)
+        
+        current_title = QLabel("Current Position")
+        current_title.setFont(QFont("Arial", 9, QFont.Bold))
+        current_title.setStyleSheet("color: #ffffff; margin-bottom: 5px;")
+        current_title.setAlignment(Qt.AlignCenter)
+        current_layout.addWidget(current_title)
+        
+        self.current_az_label = QLabel("Az: --°")
+        self.current_az_label.setFont(QFont("Arial", 8))
+        self.current_az_label.setStyleSheet("color: #00ff00; margin: 2px;")
+        current_layout.addWidget(self.current_az_label)
+        
+        self.current_alt_label = QLabel("Alt: --°")
+        self.current_alt_label.setFont(QFont("Arial", 8))
+        self.current_alt_label.setStyleSheet("color: #00ff00; margin: 2px;")
+        current_layout.addWidget(self.current_alt_label)
+        
+        self.mount_status_label = QLabel("Disconnected")
+        self.mount_status_label.setFont(QFont("Arial", 8))
+        self.mount_status_label.setStyleSheet("color: #888888; margin: 2px;")
+        current_layout.addWidget(self.mount_status_label)
+        
+        # Mode toggle button
+        self.mode_toggle_button = QPushButton("Auto Tracking")
+        self.mode_toggle_button.setCheckable(True)
+        self.mode_toggle_button.setChecked(False)  # Start in auto tracking mode
+        self.mode_toggle_button.setStyleSheet("""
+            QPushButton {
+                background-color: #4a6a4a;
+                color: #ffffff;
+                border: 1px solid #666666;
+                border-radius: 4px;
+                padding: 4px 8px;
+                font-weight: bold;
+                font-size: 8px;
+                margin-top: 5px;
+            }
+            QPushButton:checked {
+                background-color: #aa6644;
+                color: #ffffff;
+            }
+            QPushButton:hover {
+                border: 1px solid #ffaa00;
+            }
+            QPushButton:pressed {
+                background-color: #3a5a3a;
+            }
+        """)
+        current_layout.addWidget(self.mode_toggle_button)
+        
+        layout.addWidget(current_frame)
+        
+        # Manual control inputs
+        control_frame = QFrame()
+        control_frame.setFrameStyle(QFrame.Box | QFrame.Raised)
+        control_frame.setStyleSheet("""
+            QFrame {
+                border: 1px solid #3a3a3a;
+                border-radius: 4px;
+                background-color: #2a2a2a;
+                padding: 5px;
+            }
+        """)
+        control_layout = QGridLayout(control_frame)
+        control_layout.setSpacing(8)
+        
+        control_title = QLabel("Set Position")
+        control_title.setFont(QFont("Arial", 9, QFont.Bold))
+        control_title.setStyleSheet("color: #ffffff; margin-bottom: 5px;")
+        control_title.setAlignment(Qt.AlignCenter)
+        control_layout.addWidget(control_title, 0, 0, 1, 2)
+        
+        # Azimuth input
+        az_label = QLabel("Azimuth (°):")
+        az_label.setFont(QFont("Arial", 8))
+        az_label.setStyleSheet("color: #ffffff;")
+        control_layout.addWidget(az_label, 1, 0)
+        
+        self.manual_az_spin = QDoubleSpinBox()
+        self.manual_az_spin.setRange(0.0, 360.0)
+        self.manual_az_spin.setDecimals(2)
+        self.manual_az_spin.setSingleStep(1.0)
+        self.manual_az_spin.setValue(0.0)
+        self.manual_az_spin.setStyleSheet("""
+            QDoubleSpinBox {
+                background-color: #2a2a2a;
+                color: #ffffff;
+                border: 1px solid #3a3a3a;
+                border-radius: 2px;
+                min-width: 80px;
+                padding: 2px;
+            }
+            QDoubleSpinBox:focus {
+                border: 1px solid #ffaa00;
+            }
+        """)
+        control_layout.addWidget(self.manual_az_spin, 1, 1)
+        
+        # Altitude input
+        alt_label = QLabel("Altitude (°):")
+        alt_label.setFont(QFont("Arial", 8))
+        alt_label.setStyleSheet("color: #ffffff;")
+        control_layout.addWidget(alt_label, 2, 0)
+        
+        self.manual_alt_spin = QDoubleSpinBox()
+        self.manual_alt_spin.setRange(-90.0, 90.0)
+        self.manual_alt_spin.setDecimals(2)
+        self.manual_alt_spin.setSingleStep(1.0)
+        self.manual_alt_spin.setValue(0.0)
+        self.manual_alt_spin.setStyleSheet("""
+            QDoubleSpinBox {
+                background-color: #2a2a2a;
+                color: #ffffff;
+                border: 1px solid #3a3a3a;
+                border-radius: 2px;
+                min-width: 80px;
+                padding: 2px;
+            }
+            QDoubleSpinBox:focus {
+                border: 1px solid #ffaa00;
+            }
+        """)
+        control_layout.addWidget(self.manual_alt_spin, 2, 1)
+        
+        # Precision mode checkbox
+        self.precision_checkbox = QPushButton("Fast Mode")
+        self.precision_checkbox.setCheckable(True)
+        self.precision_checkbox.setChecked(False)  # Default to fast mode
+        self.precision_checkbox.clicked.connect(self.update_precision_mode_text)
+        self.precision_checkbox.setStyleSheet("""
+            QPushButton {
+                background-color: #4a4a6a;
+                color: #ffffff;
+                border: 1px solid #666666;
+                border-radius: 3px;
+                padding: 3px 6px;
+                font-size: 8px;
+                margin-top: 3px;
+            }
+            QPushButton:checked {
+                background-color: #6a6a4a;
+                color: #ffffff;
+            }
+            QPushButton:hover {
+                border: 1px solid #ffaa00;
+            }
+        """)
+        self.precision_checkbox.clicked.connect(self.update_precision_mode_text)
+        control_layout.addWidget(self.precision_checkbox, 3, 0, 1, 2)
+        
+        # Set initial text
+        self.update_precision_mode_text()
+        
+        layout.addWidget(control_frame)
+        
+        # Control buttons
+        button_frame = QFrame()
+        button_frame.setFrameStyle(QFrame.Box | QFrame.Raised)
+        button_frame.setStyleSheet("""
+            QFrame {
+                border: 1px solid #3a3a3a;
+                border-radius: 4px;
+                background-color: #2a2a2a;
+                padding: 5px;
+            }
+        """)
+        button_layout = QVBoxLayout(button_frame)
+        button_layout.setSpacing(8)
+        
+        button_title = QLabel("Actions")
+        button_title.setFont(QFont("Arial", 9, QFont.Bold))
+        button_title.setStyleSheet("color: #ffffff; margin-bottom: 5px;")
+        button_title.setAlignment(Qt.AlignCenter)
+        button_layout.addWidget(button_title)
+        
+        # Go To button
+        self.goto_button = QPushButton("Go To Position")
+        self.goto_button.setStyleSheet("""
+            QPushButton {
+                background-color: #4a4a4a;
+                color: #ffffff;
+                border: 1px solid #666666;
+                border-radius: 4px;
+                padding: 6px 12px;
+                font-weight: bold;
+                font-size: 9px;
+            }
+            QPushButton:hover {
+                background-color: #5a5a5a;
+                border: 1px solid #ffaa00;
+            }
+            QPushButton:pressed {
+                background-color: #3a3a3a;
+            }
+            QPushButton:disabled {
+                background-color: #333333;
+                color: #666666;
+                border: 1px solid #444444;
+            }
+        """)
+        button_layout.addWidget(self.goto_button)
+        
+        # Reset button
+        self.reset_button = QPushButton("Reset (0°, 0°)")
+        self.reset_button.setStyleSheet("""
+            QPushButton {
+                background-color: #aa4444;
+                color: #ffffff;
+                border: 1px solid #666666;
+                border-radius: 4px;
+                padding: 6px 12px;
+                font-weight: bold;
+                font-size: 9px;
+            }
+            QPushButton:hover {
+                background-color: #bb5555;
+                border: 1px solid #ffaa00;
+            }
+            QPushButton:pressed {
+                background-color: #993333;
+            }
+            QPushButton:disabled {
+                background-color: #333333;
+                color: #666666;
+                border: 1px solid #444444;
+            }
+        """)
+        button_layout.addWidget(self.reset_button)
+        
+        # Get Current Position button
+        self.get_position_button = QPushButton("Update Position")
+        self.get_position_button.setStyleSheet("""
+            QPushButton {
+                background-color: #4a6a4a;
+                color: #ffffff;
+                border: 1px solid #666666;
+                border-radius: 4px;
+                padding: 6px 12px;
+                font-weight: bold;
+                font-size: 9px;
+            }
+            QPushButton:hover {
+                background-color: #5a7a5a;
+                border: 1px solid #ffaa00;
+            }
+            QPushButton:pressed {
+                background-color: #3a5a3a;
+            }
+            QPushButton:disabled {
+                background-color: #333333;
+                color: #666666;
+                border: 1px solid #444444;
+            }
+        """)
+        button_layout.addWidget(self.get_position_button)
+        
+        # Reconnect Mount button
+        self.reconnect_mount_button = QPushButton("Reconnect Mount")
+        self.reconnect_mount_button.setStyleSheet("""
+            QPushButton {
+                background-color: #6a4a6a;
+                color: #ffffff;
+                border: 1px solid #666666;
+                border-radius: 4px;
+                padding: 6px 12px;
+                font-weight: bold;
+                font-size: 9px;
+            }
+            QPushButton:hover {
+                background-color: #7a5a7a;
+                border: 1px solid #ffaa00;
+            }
+            QPushButton:pressed {
+                background-color: #5a3a5a;
+            }
+            QPushButton:disabled {
+                background-color: #333333;
+                color: #666666;
+                border: 1px solid #444444;
+            }
+        """)
+        button_layout.addWidget(self.reconnect_mount_button)
+        
+        layout.addWidget(button_frame)
+        
+        # Connect button signals
+        self.goto_button.clicked.connect(self.manual_goto_position)
+        self.reset_button.clicked.connect(self.reset_mount_position)
+        self.get_position_button.clicked.connect(self.update_mount_position_display)
+        self.mode_toggle_button.clicked.connect(self.toggle_control_mode)
+        self.reconnect_mount_button.clicked.connect(self.reconnect_mount_with_feedback)
+        
+        return group
     
     def create_led_timing_plot(self):
         """Create LED timing plot showing red and green LED patterns"""
@@ -1340,18 +2060,40 @@ class TrackingPanel(QWidget):
             self.camera_status_label.setText(camera_status_text)
             self.camera_status_label.setStyleSheet(f"color: {camera_status_color}; margin-bottom: 6px;")
     
-    def safe_slew(self, ra_hour, dec_deg):
+    def safe_slew_azalt(self, azimuth, altitude):
+        """Safely slew mount to azimuth/altitude position with smart positioning"""
+        # Check if we should send this position
+        if not self.should_send_new_position(azimuth, altitude):
+            return  # Don't send if position hasn't changed significantly or mount is at target
+        
         if self.slew_in_progress:
+            print("Slew already in progress, skipping new position")
             return  # Don't start a new slew if one is in progress
+            
         self.slew_in_progress = True
 
         def threaded_slew():
             try:
-                self.telescope_controller.slew_to(ra_hour, dec_deg)
+                success = self.move_to_azalt_position(azimuth, altitude)
+                if success:
+                    print(f"Mount slewing to Az={azimuth:.2f}°, Alt={altitude:.2f}°")
+                    self.update_last_sent_position(azimuth, altitude)
+                else:
+                    print("Mount slew failed")
+            except Exception as e:
+                print(f"Error during mount slew: {e}")
             finally:
                 self.slew_in_progress = False  # Mark slew as done
 
         threading.Thread(target=threaded_slew, daemon=True).start()
+
+    def safe_slew(self, ra_hour, dec_deg):
+        """Legacy method - redirects to azimuth/altitude slewing"""
+        # Convert RA/DEC to approximate azimuth/altitude for compatibility
+        # This is a simplified conversion - real conversion would require time/location
+        azimuth = ra_hour * 15.0  # Very rough approximation
+        altitude = dec_deg
+        self.safe_slew_azalt(azimuth, altitude)
 
     def set_tracking_enabled(self, enabled:bool):
         self.tracking_enabled = bool(enabled)
@@ -1366,3 +2108,278 @@ class TrackingPanel(QWidget):
                     self.balloon_alt
                 )
                 self.pred_lat, self.pred_lon, self.pred_alt = self.ekf.get_state()
+    
+    def manual_goto_position(self):
+        """Handle manual goto position button click"""
+        if not self.mount:
+            QMessageBox.warning(self, "Mount Error", "Mount not connected!")
+            return
+        
+        azimuth = self.manual_az_spin.value()
+        altitude = self.manual_alt_spin.value()
+        
+        # Validate ranges
+        if not (0.0 <= azimuth <= 360.0):
+            QMessageBox.warning(self, "Invalid Input", "Azimuth must be between 0° and 360°")
+            return
+        
+        if not (-90.0 <= altitude <= 90.0):
+            QMessageBox.warning(self, "Invalid Input", "Altitude must be between -90° and 90°")
+            return
+        
+        # Disable buttons during operation
+        self.goto_button.setEnabled(False)
+        self.reset_button.setEnabled(False)
+        
+        try:
+            # Force new position to bypass tolerance checking
+            self.force_new_position = True
+            print(f"Manual command: Moving mount to Az={azimuth:.2f}°, Alt={altitude:.2f}°")
+            
+            # Use the retry method (now asynchronous)
+            success = self.safe_slew_azalt_with_retry(azimuth, altitude)
+            
+            if success:
+                print(f"✓ Manual command initiated")
+                # Show immediate feedback
+                self.mount_status_label.setText("Moving...")
+                self.mount_status_label.setStyleSheet("color: #ffaa00; margin: 2px;")
+            else:
+                QMessageBox.warning(self, "Mount Error", "Failed to initiate mount movement.")
+                
+        except Exception as e:
+            print(f"Error in manual goto: {e}")
+            QMessageBox.critical(self, "Mount Error", f"Error moving mount: {str(e)}")
+        finally:
+            # Re-enable buttons after short delay
+            QTimer.singleShot(2000, lambda: self.goto_button.setEnabled(True))
+            QTimer.singleShot(2000, lambda: self.reset_button.setEnabled(True))
+            
+        # Update display after a short delay to allow mount to start moving
+        QTimer.singleShot(500, self.update_mount_position_display)
+    
+    def safe_slew_azalt_with_retry(self, azimuth, altitude, max_retries=2):
+        """Safe slewing with retry logic for manual commands (asynchronous)"""
+        def async_slew():
+            for attempt in range(max_retries + 1):
+                try:
+                    print(f"Attempt {attempt + 1}/{max_retries + 1}: Moving mount to Az={azimuth:.2f}°, Alt={altitude:.2f}°")
+                    
+                    # Use precision or fast movement based on user setting
+                    if hasattr(self, 'precision_checkbox') and self.precision_checkbox.isChecked():
+                        print("Using precision movement mode")
+                        success = self.move_to_azalt_position_precise(azimuth, altitude)
+                    else:
+                        print("Using fast movement mode")
+                        success = self.move_to_azalt_position(azimuth, altitude)
+                        
+                    if success:
+                        self.update_last_sent_position(azimuth, altitude)
+                        print(f"✓ Manual command successful")
+                        return True
+                    else:
+                        print(f"Attempt {attempt + 1} failed")
+                        if attempt < max_retries:
+                            print("Waiting 2 seconds before retry...")
+                            time.sleep(2)
+                            
+                except Exception as e:
+                    print(f"Attempt {attempt + 1} error: {e}")
+                    if attempt < max_retries:
+                        print("Waiting 2 seconds before retry...")
+                        time.sleep(2)
+                    else:
+                        print(f"All attempts failed: {e}")
+            
+            print("All manual command attempts failed")
+            return False
+        
+        # Run asynchronously to prevent UI freezing
+        threading.Thread(target=async_slew, daemon=True).start()
+        return True  # Return immediately since we're async
+    
+    def reset_mount_position(self):
+        """Reset mount to home position (0°, 0°)"""
+        if not self.mount:
+            QMessageBox.warning(self, "Mount Error", "Mount not connected!")
+            return
+        
+        reply = QMessageBox.question(self, "Reset Mount", 
+                                   "Reset mount to home position (Az=0°, Alt=0°)?",
+                                   QMessageBox.Yes | QMessageBox.No,
+                                   QMessageBox.No)
+        
+        if reply == QMessageBox.Yes:
+            # Disable buttons during operation
+            self.goto_button.setEnabled(False)
+            self.reset_button.setEnabled(False)
+            
+            try:
+                # Set spin boxes to home position
+                self.manual_az_spin.setValue(0.0)
+                self.manual_alt_spin.setValue(0.0)
+                
+                # Force new position to bypass tolerance checking
+                self.force_new_position = True
+                print("Manual command: Resetting mount to home position (0°, 0°)")
+                
+                # Use the retry method (now asynchronous)
+                success = self.safe_slew_azalt_with_retry(0.0, 0.0)
+                
+                if success:
+                    print("✓ Reset command initiated")
+                    # Show immediate feedback
+                    self.mount_status_label.setText("Resetting...")
+                    self.mount_status_label.setStyleSheet("color: #ffaa00; margin: 2px;")
+                else:
+                    QMessageBox.warning(self, "Mount Error", "Failed to initiate mount reset.")
+                    
+            except Exception as e:
+                print(f"Error in reset: {e}")
+                QMessageBox.critical(self, "Mount Error", f"Error resetting mount: {str(e)}")
+            finally:
+                # Re-enable buttons after short delay
+                QTimer.singleShot(2000, lambda: self.goto_button.setEnabled(True))
+                QTimer.singleShot(2000, lambda: self.reset_button.setEnabled(True))
+            
+            # Update display after a short delay
+            QTimer.singleShot(500, self.update_mount_position_display)
+    
+    def update_mount_position_display(self):
+        """Update the current position display"""
+        # Check if GUI elements exist (in case called during initialization)
+        if not hasattr(self, 'current_az_label'):
+            return
+            
+        if not self.mount:
+            self.current_az_label.setText("Az: --°")
+            self.current_alt_label.setText("Alt: --°")
+            self.mount_status_label.setText("Disconnected")
+            self.mount_status_label.setStyleSheet("color: #ff4444; margin: 2px;")
+            return
+        
+        try:
+            # Get current position from mount with timeout protection
+            current_az, current_alt = self.get_mount_position()
+            
+            if current_az is not None and current_alt is not None:
+                # Update labels
+                self.current_az_label.setText(f"Az: {current_az:.2f}°")
+                self.current_alt_label.setText(f"Alt: {current_alt:.2f}°")
+                
+                # Check if mount is slewing (with error protection)
+                try:
+                    is_slewing = self.is_mount_moving()
+                    if is_slewing:
+                        self.mount_status_label.setText("Slewing...")
+                        self.mount_status_label.setStyleSheet("color: #ffaa00; margin: 2px;")
+                    else:
+                        self.mount_status_label.setText("Ready")
+                        self.mount_status_label.setStyleSheet("color: #00ff00; margin: 2px;")
+                except:
+                    # If we can't check slewing status, just show position
+                    self.mount_status_label.setText("Position OK")
+                    self.mount_status_label.setStyleSheet("color: #00ff00; margin: 2px;")
+            else:
+                self.current_az_label.setText("Az: Error")
+                self.current_alt_label.setText("Alt: Error")
+                self.mount_status_label.setText("Comm Error")
+                self.mount_status_label.setStyleSheet("color: #ff4444; margin: 2px;")
+                
+        except Exception as e:
+            print(f"Error getting mount position (non-critical): {e}")
+            self.current_az_label.setText("Az: Timeout")
+            self.current_alt_label.setText("Alt: Timeout")
+            self.mount_status_label.setText("Timeout")
+            self.mount_status_label.setStyleSheet("color: #ff4444; margin: 2px;")
+    
+    def reconnect_mount_with_feedback(self):
+        """Reconnect to mount with user feedback"""
+        try:
+            current_port = self.get_current_mount_port()
+            print(f"Reconnecting to mount on {current_port}...")
+            
+            # Disable button during reconnection
+            self.reconnect_mount_button.setEnabled(False)
+            self.reconnect_mount_button.setText("Connecting...")
+            
+            # Reconnect
+            success = self.reconnect_mount()
+            
+            if success:
+                QMessageBox.information(self, "Mount Connection", f"Successfully connected to mount on {current_port}")
+                print(f"✓ Mount reconnected successfully on {current_port}")
+            else:
+                QMessageBox.warning(self, "Mount Connection", f"Failed to connect to mount on {current_port}. Check port and mount power.")
+                print(f"✗ Mount reconnection failed on {current_port}")
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Mount Error", f"Error during reconnection: {str(e)}")
+            print(f"Error during mount reconnection: {e}")
+        finally:
+            # Re-enable button
+            self.reconnect_mount_button.setEnabled(True)
+            self.reconnect_mount_button.setText("Reconnect Mount")
+            self.update_manual_control_states()
+            
+            # Update position display
+            QTimer.singleShot(500, self.update_mount_position_display)
+    
+    def update_precision_mode_text(self):
+        """Update the precision mode button text to reflect current state"""
+        if self.precision_checkbox.isChecked():
+            self.precision_checkbox.setText("Precision Mode")
+        else:
+            self.precision_checkbox.setText("Fast Mode")
+    
+    def toggle_control_mode(self):
+        """Toggle between manual and automatic tracking mode"""
+        self.manual_control_mode = self.mode_toggle_button.isChecked()
+        
+        if self.manual_control_mode:
+            self.mode_toggle_button.setText("Manual Control")
+            print("Switched to MANUAL control mode - balloon tracking disabled")
+        else:
+            self.mode_toggle_button.setText("Auto Tracking")
+            print("Switched to AUTO TRACKING mode - balloon tracking enabled")
+        
+        # Update button states
+        self.update_manual_control_states()
+    
+    def update_precision_mode_text(self):
+        """Update the precision mode button text based on current state"""
+        if hasattr(self, 'precision_checkbox'):
+            if self.precision_checkbox.isChecked():
+                self.precision_checkbox.setText("Precision Mode ✓")
+                self.precision_checkbox.setStyleSheet("""
+                    QPushButton {
+                        background-color: #4a6a4a;
+                        color: #ffffff;
+                        border: 1px solid #666666;
+                        border-radius: 3px;
+                        padding: 3px 6px;
+                        font-size: 8px;
+                        margin-top: 3px;
+                    }
+                    QPushButton:hover {
+                        border: 1px solid #ffaa00;
+                        background-color: #5a7a5a;
+                    }
+                """)
+            else:
+                self.precision_checkbox.setText("Fast Mode ⚡")
+                self.precision_checkbox.setStyleSheet("""
+                    QPushButton {
+                        background-color: #6a4a4a;
+                        color: #ffffff;
+                        border: 1px solid #666666;
+                        border-radius: 3px;
+                        padding: 3px 6px;
+                        font-size: 8px;
+                        margin-top: 3px;
+                    }
+                    QPushButton:hover {
+                        border: 1px solid #ffaa00;
+                        background-color: #7a5a5a;
+                    }
+                """)
