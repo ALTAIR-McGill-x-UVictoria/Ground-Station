@@ -18,136 +18,17 @@ import pytz
 from datetime import datetime
 from .EKF_algo.EKF import EKF
 
-# Celestron mount control
+# Import the new controller classes
+from controllers.mount_controller import MountController
+from controllers.camera_controller import CameraController
+from controllers.tracking_calculator import TrackingCalculator
+
+# For backward compatibility, keep the RGB_photo function
 try:
-    import nexstar as ns
-    NEXSTAR_AVAILABLE = True
-    print("Nexstar module imported successfully")
-except ImportError as e:
-    print(f"Nexstar module not available: {e}")
-    NEXSTAR_AVAILABLE = False
-# Import ZWO camera functionality
-try:
-    sys.path.append(os.path.join(os.path.dirname(__file__), 'ZWO_Trigger'))
-    import zwoasi
-    # from Trigger import RAW16_photo, RGB_photo
-    # Import camera initialization from Camera_Trigger but don't execute the script
-    import importlib.util
-    spec = importlib.util.spec_from_file_location("camera_init", 
-                                                os.path.join(os.path.dirname(__file__), 'ZWO_Trigger', 'Camera_Trigger.py'))
-    camera_init_module = importlib.util.module_from_spec(spec)
-    
-    # Initialize camera properly following Camera_Trigger.py pattern
-    dll_path = os.path.join(os.path.dirname(__file__), 'ZWO_Trigger', 'ZWO_ASI_LIB', 'lib', 'x64', 'ASICamera2.dll')
-    print(f"Attempting to load DLL from: {dll_path}")
-    
-    # Check if DLL exists
-    if not os.path.exists(dll_path):
-        print(f"❌ DLL not found at: {dll_path}")
-        # List directory contents for debugging
-        dll_dir = os.path.dirname(dll_path)
-        if os.path.exists(dll_dir):
-            print(f"Contents of {dll_dir}: {os.listdir(dll_dir)}")
-        else:
-            print(f"Directory {dll_dir} does not exist")
-        raise ImportError(f"Camera DLL not found at {dll_path}")
-    
-    try:
-        # Check if SDK is already initialized by trying to get camera count
-        try:
-            num_cameras = zwoasi.get_num_cameras()
-            print(f"SDK already initialized, found {num_cameras} cameras")
-        except:
-            # SDK not initialized yet, initialize it
-            print(f"Initializing SDK with DLL: {dll_path}")
-            zwoasi.init(dll_path)
-            print("✅ ASICamera2.dll loaded successfully in GUI")
-    except Exception as e:
-        print(f"❌ Failed to load SDK in GUI: {e}")
-        raise ImportError("Camera SDK not available")
-    
-    # Check for cameras
-    num_cameras = zwoasi.get_num_cameras()
-    if num_cameras == 0:
-        print('No cameras found')
-        raise ImportError("No cameras detected")
-    
-    cameras_found = zwoasi.list_cameras()
-    camera_id = 0  # Use first camera
-    print(f'GUI: Using camera #{camera_id}: {cameras_found[camera_id]}')
-    
-    # Initialize camera object
-    camera = zwoasi.Camera(camera_id)
-    camera_info = camera.get_camera_property()
-    controls = camera.get_controls()
-    
-    # Add save_control_values function here since it's used by RGB_photo
-    def save_control_values(filename, settings):
-        try:
-            settings_filename = filename + '.txt'
-            with open(settings_filename, 'w') as f:
-                for k in sorted(settings.keys()):
-                    f.write('%s: %s\n' % (k, str(settings[k])))
-            print('Camera settings saved to %s' % settings_filename)
-        except Exception as e:
-            print(f'Error saving camera settings: {e}')
-    
-    # Set optimal settings following Camera_Trigger.py
-    camera.set_control_value(zwoasi.ASI_BANDWIDTHOVERLOAD, camera.get_controls()['BandWidth']['MinValue'])
-    camera.disable_dark_subtract()
-    
-    # Set default control values
-    camera.set_control_value(zwoasi.ASI_GAIN, 150)
-    camera.set_control_value(zwoasi.ASI_EXPOSURE, 30000)
-    camera.set_control_value(zwoasi.ASI_WB_B, 99)
-    camera.set_control_value(zwoasi.ASI_WB_R, 75)
-    camera.set_control_value(zwoasi.ASI_GAMMA, 50)
-    camera.set_control_value(zwoasi.ASI_BRIGHTNESS, 50)
-    camera.set_control_value(zwoasi.ASI_FLIP, 0)
-    
-    # # Enable stills mode
-    # try:
-    #     camera.stop_video_capture()
-    #     camera.stop_exposure()
-    # except:
-    #     pass  # Ignore errors if already stopped
-    
-    CAMERA_AVAILABLE = True
-    print("ZWO Camera module imported and initialized successfully")
-    
+    from controllers.camera_controller import RGB_photo
+except ImportError:
     def RGB_photo(filename, gain, exposure):
-        camera.set_image_type(zwoasi.ASI_IMG_RGB24)
-        camera.capture(filename=filename)
-        save_control_values(filename, camera.get_control_values())
-        print(f"Captured RGB: {filename} with gain={gain}, exposure={exposure}")
-
-
-
-except ImportError as e:
-    print(f"ZWO Camera module not available: {e}")
-    CAMERA_AVAILABLE = False
-    camera = None
-    camera_info = None
-    controls = None
-    
-    # Create dummy functions for when camera is not available
-    # def RAW16_photo(filename, gain, exposure):
-        # print(f"CAMERA NOT AVAILABLE - Would capture RAW16: {filename} with gain={gain}, exposure={exposure}")
-    # def save_control_values(filename, settings):
-    #     try:
-    #         settings_filename = filename + '.txt'
-    #         with open(settings_filename, 'w') as f:
-    #             for k in sorted(settings.keys()):
-    #                 f.write('%s: %s\n' % (k, str(settings[k])))
-    #         print('Camera settings saved to %s' % settings_filename)
-    #     except Exception as e:
-    #         print(f'Error saving camera settings: {e}')
-            
-    # def RGB_photo(filename, gain, exposure):
-    #     # camera.set_image_type(zwoasi.ASI_IMG_RGB24)
-    #     # camera.capture(filename=filename)
-    #     save_control_values(filename, camera.get_control_values())
-    #     print(f"Captured RGB: {filename} with gain={gain}, exposure={exposure}")
+        print(f"CAMERA NOT AVAILABLE - Would capture RGB: {filename} with gain={gain}, exposure={exposure}")
 
 class StatusIndicator(QFrame):
     """Custom status indicator widget"""
@@ -238,6 +119,36 @@ class TrackingPanel(QWidget):
         self.telemetry_model = telemetry_model
         self.map_controller = map_controller
         
+        # Initialize controllers
+        self._init_controllers()
+        
+        # Initialize data members
+        self._init_data_members()
+        
+        # Initialize UI and connections
+        self._init_ui_and_connections()
+        
+        # Initialize timers
+        self._init_timers()
+    
+    def _init_controllers(self):
+        """Initialize hardware and calculation controllers"""
+        # Mount controller
+        self.mount_controller = MountController()
+        
+        # Camera controller  
+        self.camera_controller = CameraController()
+        
+        # Tracking calculator
+        self.tracking_calculator = TrackingCalculator()
+        
+        # EKF for prediction
+        self.ekf = EKF()
+        
+        print("Controllers initialized successfully")
+    
+    def _init_data_members(self):
+        """Initialize data members and state variables"""
         # Tracking data
         self.balloon_lat = 0
         self.balloon_lon = 0
@@ -249,19 +160,17 @@ class TrackingPanel(QWidget):
         self.elevation = 0.0
         self.distance = 0.0
         self.slew_in_progress = False
+        self.mount_at_target = False  # Track if mount has reached target position
+        self.mount_settled_tolerance = 1.0  # Default tolerance for mount positioning (degrees)
+        self.last_sent_azimuth = None  # Track last commanded azimuth
+        self.last_sent_altitude = None  # Track last commanded altitude
         
-        # Mount tracking data (azimuth/altitude)
-        self.target_azimuth = 0.0
-        self.target_altitude = 0.0
-        self.current_azimuth = 0.0
-        self.current_altitude = 0.0
-        
-        # Smart positioning to prevent oscillation
-        self.last_sent_azimuth = None
-        self.last_sent_altitude = None
-        self.position_tolerance = 0.5  # degrees - minimum change required to send new position
-        self.mount_settled_tolerance = 0.2  # degrees - tolerance for considering mount "at target"
-        self.mount_at_target = False
+        # Prediction data
+        self.pred_lat = 0.0
+        self.pred_lon = 0.0
+        self.pred_alt = 0.0
+        self.tracking_enabled = True
+        self.last_pred_slew_time = 0
         
         # Manual mount control mode
         self.manual_control_mode = False  # False = auto tracking, True = manual control
@@ -270,339 +179,109 @@ class TrackingPanel(QWidget):
         self.last_minute = -1  # Track minute changes
         self.last_exposure_check = -1  # Track exposure timing
         
+        # Acceleration data
         self.acc_x = 0
         self.acc_y = 0
         self.acc_z = 0
-
-        # Camera settings (initialize before UI setup)
-        self.camera_gain = 150  # Default gain
-        self.camera_exposure = 30000  # Default exposure in microseconds
-        self.image_counter = 0  # Counter for unique filenames
         
+        # Logging setup
         self.log_dir = os.path.join(os.path.dirname(__file__), '../../logs')
         os.makedirs(self.log_dir, exist_ok=True)
         now = datetime.utcnow().strftime('%Y-%m-%d %H-%M-%S')
         self.log_file = os.path.join(self.log_dir, f'tracking_panel_log_{now}.txt')
-
-        self.ekf = EKF()
-        self.pred_lat = 0.0
-        self.pred_lon = 0.0
-        self.pred_alt = 0.0
-        self.tracking_enabled = True
-        self.last_pred_slew_time = 0
-
-        self.prediction_thread = threading.Thread(target=self.prediction_loop, daemon=True)
-        self.prediction_thread.start()
-
+        
+        print("Data members initialized")
+    
+    def _init_ui_and_connections(self):
+        """Initialize UI and setup connections"""
         self.setup_ui()
         self.setup_connections()
-        
-        # Timer for updates
+        print("UI and connections initialized")
+    
+    def _init_timers(self):
+        """Initialize update timers"""
+        # Main update timer
         self.update_timer = QTimer()
         self.update_timer.timeout.connect(self.update_displays)
         self.update_timer.start(1000)  # Update every second
         
-        # Timer for exposure timing (check every second for 20-second intervals)
+        # Exposure timing timer
         self.exposure_timer = QTimer()
         self.exposure_timer.timeout.connect(self.check_exposure_timing)
         self.exposure_timer.start(1000)  # Check every second
         
-        # Timer for LED plot updates
+        # LED plot timer
         self.led_plot_timer = QTimer()
         self.led_plot_timer.timeout.connect(self.update_led_timing_plot)
         self.led_plot_timer.start(100)  # Update plot every 100ms for smooth animation
-
-        # Celestron Mount Controller
-        self.mount = None
-        self.mount_port = "COM10"  # Default port
-        self.mount_connected = False
-        self.mount_port_getter = None  # Function to get current mount port selection
-        self.init_mount_connection()
+        
+        # Start prediction thread
+        self.prediction_thread = threading.Thread(target=self.prediction_loop, daemon=True)
+        self.prediction_thread.start()
+        
+        print("Timers and threads initialized")
     
     def set_mount_port_getter(self, port_getter_func):
         """Set a function that returns the currently selected mount port"""
-        self.mount_port_getter = port_getter_func
-    
-    def get_current_mount_port(self):
-        """Get the current mount port, either from the getter function or the default"""
-        if self.mount_port_getter:
-            try:
-                return self.mount_port_getter()
-            except:
-                pass
-        return self.mount_port
-        
-    def init_mount_connection(self):
-        """Initialize connection to Celestron mount"""
-        if not NEXSTAR_AVAILABLE:
-            print("Nexstar module not available - mount control disabled")
-            return
-            
-        try:
-            current_port = self.get_current_mount_port()
-            print(f"Attempting to connect to Celestron mount on {current_port}...")
-            self.mount = ns.NexstarHandController(current_port)
-            
-            # Test connection by getting mount model
-            try:
-                model = self.mount.getModel()
-                print(f"✓ Mount connected successfully! Model: {model}")
-                self.mount_connected = True
-                self.mount_port = current_port  # Update the stored port
-            except Exception as e:
-                print(f"✗ Mount connection test failed: {e}")
-                self.mount_connected = False
-                self.mount = None
-                
-        except Exception as e:
-            print(f"✗ Failed to connect to mount: {e}")
-            self.mount_connected = False
-            self.mount = None
-        
-        # Update manual control button states
-        self.update_manual_control_states()
+        self.mount_controller.set_port_getter(port_getter_func)
     
     def reconnect_mount(self):
         """Reconnect to mount with current port selection"""
-        if self.mount_connected and self.mount:
-            try:
-                # Close current connection
-                self.mount.close() if hasattr(self.mount, 'close') else None
-            except:
-                pass
-        
-        self.mount = None
-        self.mount_connected = False
-        self.init_mount_connection()
-        return self.mount_connected
+        return self.mount_controller.reconnect()
+    
+    def move_to_azalt_position(self, azimuth, altitude):
+        """Move mount to specific azimuth/altitude position"""
+        return self.mount_controller.move_to_position(azimuth, altitude)
+    
+    def move_to_azalt_position_precise(self, azimuth, altitude, precision_threshold=1.0):
+        """Move mount to specific azimuth/altitude position with precision control"""
+        return self.mount_controller.move_to_position_precise(azimuth, altitude, precision_threshold)
+    
+    def get_mount_position(self):
+        """Get current mount position"""
+        return self.mount_controller.get_position()
+    
+    def is_mount_moving(self):
+        """Check if mount is currently moving"""
+        return self.mount_controller.is_moving()
+    
+    def should_send_new_position(self, target_az, target_alt):
+        """Determine if we should send a new position to the mount"""
+        return self.mount_controller.should_send_new_position(target_az, target_alt)
+    
+    def update_last_sent_position(self, azimuth, altitude):
+        """Update the last sent position tracking"""
+        self.mount_controller.update_last_sent_position(azimuth, altitude)
+    
+    def set_position_tolerance(self, tolerance_degrees):
+        """Set the minimum position change required to send new coordinates"""
+        self.mount_controller.set_position_tolerance(tolerance_degrees)
+    
+    def set_settled_tolerance(self, tolerance_degrees):
+        """Set the tolerance for considering the mount 'at target'"""
+        self.mount_controller.set_settled_tolerance(tolerance_degrees)
+    
+    def force_new_position(self, azimuth, altitude):
+        """Force the mount to move to a new position regardless of tolerances"""
+        self.mount_controller.force_move_to_position(azimuth, altitude)
+    
+    @property
+    def mount_connected(self):
+        """Check if mount is connected"""
+        return self.mount_controller.is_connected()
     
     def update_manual_control_states(self):
         """Update the enabled state of manual control buttons based on mount connection"""
         if hasattr(self, 'goto_button'):
-            self.goto_button.setEnabled(self.mount_connected)
-            self.reset_button.setEnabled(self.mount_connected)
-            self.get_position_button.setEnabled(self.mount_connected)
+            connected = self.mount_connected
+            self.goto_button.setEnabled(connected)
+            self.reset_button.setEnabled(connected)
+            self.get_position_button.setEnabled(connected)
             self.reconnect_mount_button.setEnabled(True)  # Always enabled
             self.mode_toggle_button.setEnabled(True)  # Always enabled
     
-    def move_to_azalt_position(self, azimuth, altitude):
-        """Move mount to specific azimuth/altitude position"""
-        if not self.mount_connected or self.mount is None:
-            print("Mount not connected - cannot move")
-            return False
-            
-        try:
-            print(f"Moving mount to: Az={azimuth:.2f}°, Alt={altitude:.2f}°")
-            
-            self.mount.gotoPosition(
-                firstCoordinate=azimuth,
-                secondCoordinate=altitude,
-                coordinateMode=ns.NexstarCoordinateMode.AZM_ALT,
-                highPrecisionFlag=True
-            )
-            
-            self.target_azimuth = azimuth
-            self.target_altitude = altitude
-            return True
-            
-        except Exception as e:
-            print(f"Error moving mount: {e}")
-            return False
-    
-    def move_to_azalt_position_precise(self, azimuth, altitude, precision_threshold=1.0):
-        """
-        Move mount to specific azimuth/altitude position with precision control
-        Uses optimized approach to reduce overshooting without blocking UI
-        """
-        if not self.mount_connected or self.mount is None:
-            print("Mount not connected - cannot move")
-            return False
-        
-        try:
-            # Get current position
-            current_az, current_alt = self.get_mount_position()
-            if current_az is None or current_alt is None:
-                print("Cannot get current position - using direct move")
-                return self.move_to_azalt_position(azimuth, altitude)
-            
-            # Calculate distance to target
-            az_diff = azimuth - current_az
-            alt_diff = altitude - current_alt
-            
-            # Handle azimuth wraparound
-            if az_diff > 180:
-                az_diff -= 360
-            elif az_diff < -180:
-                az_diff += 360
-            
-            total_distance = math.sqrt(az_diff**2 + alt_diff**2)
-            print(f"Current: Az={current_az:.2f}°, Alt={current_alt:.2f}°")
-            print(f"Target: Az={azimuth:.2f}°, Alt={altitude:.2f}°")
-            print(f"Distance: {total_distance:.2f}°")
-            
-            # If we're already close enough, don't move
-            if total_distance < 0.1:
-                print("Already at target position")
-                return True
-            
-            # For large movements (>15°), use a single intermediate step approach
-            if total_distance > 15.0:
-                print("Large movement detected - using intermediate positioning")
-                return self._intermediate_movement(current_az, current_alt, azimuth, altitude)
-            
-            # For medium movements (5-15°), use approach with lower precision
-            elif total_distance > 5.0:
-                print("Medium movement detected - using reduced precision")
-                return self._reduced_precision_movement(azimuth, altitude)
-            
-            # For small movements (<5°), use direct precise movement
-            else:
-                print("Small movement detected - using direct precise movement")
-                return self._direct_precise_movement(azimuth, altitude)
-                
-        except Exception as e:
-            print(f"Error in precise movement: {e}")
-            # Fallback to direct movement
-            return self.move_to_azalt_position(azimuth, altitude)
-    
-    def _intermediate_movement(self, start_az, start_alt, target_az, target_alt):
-        """Move to intermediate point then final target (non-blocking)"""
-        try:
-            az_diff = target_az - start_az
-            alt_diff = target_alt - start_alt
-            
-            # Handle azimuth wraparound
-            if az_diff > 180:
-                az_diff -= 360
-            elif az_diff < -180:
-                az_diff += 360
-            
-            # Move to 80% of the way to reduce final overshoot
-            intermediate_az = start_az + (az_diff * 0.8)
-            intermediate_alt = start_alt + (alt_diff * 0.8)
-            
-            # Normalize azimuth
-            while intermediate_az < 0:
-                intermediate_az += 360
-            while intermediate_az >= 360:
-                intermediate_az -= 360
-            
-            # Clamp altitude
-            intermediate_alt = max(-90, min(90, intermediate_alt))
-            
-            print(f"Intermediate positioning to Az={intermediate_az:.2f}°, Alt={intermediate_alt:.2f}°")
-            
-            # Move to intermediate position first
-            success = self.move_to_azalt_position(intermediate_az, intermediate_alt)
-            if not success:
-                return False
-            
-            # Schedule final movement after a delay (non-blocking)
-            def final_move():
-                time.sleep(3)  # Wait for intermediate movement to settle
-                print(f"Final positioning to Az={target_az:.2f}°, Alt={target_alt:.2f}°")
-                self._reduced_precision_movement(target_az, target_alt)
-            
-            # Run final movement in separate thread to avoid blocking UI
-            threading.Thread(target=final_move, daemon=True).start()
-            return True
-            
-        except Exception as e:
-            print(f"Error in intermediate movement: {e}")
-            return False
-    
-    def _reduced_precision_movement(self, azimuth, altitude):
-        """Movement with reduced precision to minimize overshoot"""
-        try:
-            print(f"Reduced precision movement to Az={azimuth:.2f}°, Alt={altitude:.2f}°")
-            
-            self.mount.gotoPosition(
-                firstCoordinate=azimuth,
-                secondCoordinate=altitude,
-                coordinateMode=ns.NexstarCoordinateMode.AZM_ALT,
-                highPrecisionFlag=False  # Use lower precision to reduce overshoot
-            )
-            
-            self.target_azimuth = azimuth
-            self.target_altitude = altitude
-            return True
-            
-        except Exception as e:
-            print(f"Error in reduced precision movement: {e}")
-            return False
-    
-    def _direct_precise_movement(self, azimuth, altitude):
-        """Direct movement for small adjustments with verification"""
-        try:
-            # Use lower precision flag for small movements to reduce overshooting
-            print(f"Direct precise movement to Az={azimuth:.2f}°, Alt={altitude:.2f}°")
-            
-            self.mount.gotoPosition(
-                firstCoordinate=azimuth,
-                secondCoordinate=altitude,
-                coordinateMode=ns.NexstarCoordinateMode.AZM_ALT,
-                highPrecisionFlag=False  # Use lower precision for small movements
-            )
-            
-            self.target_azimuth = azimuth
-            self.target_altitude = altitude
-            return True
-            
-        except Exception as e:
-            print(f"Error in direct precise movement: {e}")
-            return False
-    
-    def get_mount_position(self):
-        """Get current mount position"""
-        if not self.mount_connected or self.mount is None:
-            return None, None
-            
-        try:
-            az, alt = self.mount.getPosition(
-                coordinateMode=ns.NexstarCoordinateMode.AZM_ALT,
-                highPrecisionFlag=True
-            )
-            self.current_azimuth = az
-            self.current_altitude = alt
-            return az, alt
-            
-        except Exception as e:
-            print(f"Error getting mount position: {e}")
-            return None, None
-    
-    def is_mount_moving(self):
-        """Check if mount is currently moving"""
-        if not self.mount_connected or self.mount is None:
-            return False
-            
-        try:
-            return self.mount.getGotoInProgress()
-        except Exception as e:
-            print(f"Error checking mount movement: {e}")
-            return False
-    
     def should_send_new_position(self, target_az, target_alt):
-        """Determine if we should send a new position to the mount"""
-        # If we've never sent a position, send it
-        if self.last_sent_azimuth is None or self.last_sent_altitude is None:
-            return True
-        
-        # Calculate change from last sent position
-        az_change = abs(target_az - self.last_sent_azimuth)
-        alt_change = abs(target_alt - self.last_sent_altitude)
-        
-        # Handle azimuth wraparound (359° to 1° is only 2° change, not 358°)
-        if az_change > 180:
-            az_change = 360 - az_change
-        
-        # Check if change is significant enough
-        significant_change = (az_change >= self.position_tolerance or 
-                            alt_change >= self.position_tolerance)
-        
-        if significant_change:
-            print(f"Significant position change detected: Az Δ{az_change:.2f}°, Alt Δ{alt_change:.2f}°")
-            return True
-        
+        """Check if we should send a new position to the mount"""
         # Check if mount is still moving to the last target
         if self.is_mount_moving():
             return False  # Don't send new position while moving
@@ -625,7 +304,7 @@ class TrackingPanel(QWidget):
             else:
                 self.mount_at_target = False
         
-        return False
+        return True  # Should send new position
     
     def update_last_sent_position(self, azimuth, altitude):
         """Update the last sent position tracking"""
@@ -918,61 +597,25 @@ class TrackingPanel(QWidget):
     
     def update_camera_gain(self, value):
         """Update camera gain setting"""
-        self.camera_gain = value
-        print(f"Camera gain updated to: {value}")
-        # Update camera if available
-        if CAMERA_AVAILABLE and camera:
-            try:
-                camera.set_control_value(zwoasi.ASI_GAIN, value)
-                print(f"Camera gain applied: {value}")
-            except Exception as e:
-                print(f"Error setting camera gain: {e}")
+        if self.camera_controller.set_gain(value):
+            print(f"Camera gain updated to: {value}")
+        else:
+            print(f"Failed to update camera gain to: {value}")
     
     def update_camera_exposure(self, value):
         """Update camera exposure setting (value in milliseconds)"""
-        self.camera_exposure = int(value * 1000)  # Convert milliseconds to microseconds
-        print(f"Camera exposure updated to: {value} ms ({self.camera_exposure} μs)")
-        # Update camera if available
-        if CAMERA_AVAILABLE and camera:
-            try:
-                camera.set_control_value(zwoasi.ASI_EXPOSURE, self.camera_exposure)
-                print(f"Camera exposure applied: {self.camera_exposure}μs")
-            except Exception as e:
-                print(f"Error setting camera exposure: {e}")
+        if self.camera_controller.set_exposure_ms(value):
+            print(f"Camera exposure updated to: {value} ms")
+        else:
+            print(f"Failed to update camera exposure to: {value} ms")
     
     def initialize_camera_for_capture(self):
-        """Initialize camera for capture following Camera_Trigger.py pattern"""
-        if not CAMERA_AVAILABLE or not camera:
-            return False
-            
-        try:
-            # Ensure stills mode is enabled
-            camera.stop_video_capture()
-            camera.stop_exposure()
-            
-            # Apply current settings
-            camera.set_control_value(zwoasi.ASI_GAIN, self.camera_gain)
-            camera.set_control_value(zwoasi.ASI_EXPOSURE, self.camera_exposure)
-            
-            # Set image type for RGB capture
-            camera.set_image_type(zwoasi.ASI_IMG_RGB24)
-            
-            print("Camera initialized for capture")
-            return True
-            
-        except Exception as e:
-            print(f"Error initializing camera for capture: {e}")
-            return False
+        """Initialize camera for capture"""
+        return self.camera_controller.prepare_for_capture()
     
     def generate_filename(self):
         """Generate a unique filename for camera capture"""
-        # current_time = QDateTime.currentDateTimeUtc()
-        current_time = self.get_current_utc_time().toPyDateTime()
-        timestamp = current_time.strftime("%Y%m%d_%H-%M-%S")         # Format manually
-        self.image_counter += 1
-        # Use .jpg extension for RGB images
-        filename = f"balloon_tracking_{timestamp}_{self.image_counter:04d}.tiff"
-        return filename
+        return self.camera_controller.generate_filename("balloon_tracking")
     
     def create_status_section(self):
         """Create the status and time section"""
@@ -1100,8 +743,9 @@ class TrackingPanel(QWidget):
         camera_layout.addWidget(camera_title)
         
         # Camera status indicator
-        camera_status_text = "AVAILABLE" if CAMERA_AVAILABLE else "NOT AVAILABLE"
-        camera_status_color = "#00ff00" if CAMERA_AVAILABLE else "#ff0000"
+        camera_info = self.camera_controller.get_camera_info()
+        camera_status_text = "AVAILABLE" if camera_info['available'] else "NOT AVAILABLE"
+        camera_status_color = "#00ff00" if camera_info['available'] else "#ff0000"
         self.camera_status_label = QLabel(camera_status_text)
         self.camera_status_label.setAlignment(Qt.AlignCenter)
         self.camera_status_label.setFont(QFont("Arial", 8))
@@ -1109,8 +753,8 @@ class TrackingPanel(QWidget):
         camera_layout.addWidget(self.camera_status_label)
         
         # Camera info display
-        if CAMERA_AVAILABLE and camera_info:
-            camera_model = camera_info.get('Name', 'Unknown Camera')
+        if camera_info['available']:
+            camera_model = camera_info.get('name', 'Unknown Camera')
             camera_info_label = QLabel(f"{camera_model}")
             camera_info_label.setAlignment(Qt.AlignCenter)
             camera_info_label.setFont(QFont("Arial", 7))
@@ -1127,9 +771,11 @@ class TrackingPanel(QWidget):
         gain_label.setStyleSheet("color: #ffffff;")
         controls_layout.addWidget(gain_label, 0, 0)
         
+        # Initialize gain and exposure with controller values
+        camera_info = self.camera_controller.get_camera_info()
         self.gain_spinbox = QSpinBox()
         self.gain_spinbox.setRange(0, 500)
-        self.gain_spinbox.setValue(self.camera_gain)
+        self.gain_spinbox.setValue(camera_info.get('gain', 150))
         self.gain_spinbox.setStyleSheet("""
             QSpinBox {
                 background-color: #2a2a2a;
@@ -1151,7 +797,7 @@ class TrackingPanel(QWidget):
         
         self.exposure_spinbox = QDoubleSpinBox()
         self.exposure_spinbox.setRange(0.1, 10000.0)  # 0.1ms to 10 seconds
-        self.exposure_spinbox.setValue(self.camera_exposure / 1000.0)  # Convert microseconds to milliseconds
+        self.exposure_spinbox.setValue(camera_info.get('exposure_ms', 30.0))  # Default 30ms
         self.exposure_spinbox.setDecimals(1)
         self.exposure_spinbox.setSuffix(" ms")
         self.exposure_spinbox.setStyleSheet("""
@@ -1193,7 +839,6 @@ class TrackingPanel(QWidget):
         layout.addWidget(camera_frame)
 
         #Add toggle button for telescope slewing mode tracking/predicting
-        # Removed - functionality replaced by manual control mode toggle
         
         return group
     
@@ -1248,74 +893,54 @@ class TrackingPanel(QWidget):
         self.ground_alt = alt
         self.calculate_tracking_parameters()
     
+    def update_mount_position_display(self):
+        """Update the mount position display with current azimuth and altitude"""
+        try:
+            current_az, current_alt = self.get_mount_position()
+            if current_az is not None and current_alt is not None:
+                self.current_az_label.setText(f"Az: {current_az:.1f}°")
+                self.current_alt_label.setText(f"Alt: {current_alt:.1f}°")
+            else:
+                self.current_az_label.setText("Az: --°")
+                self.current_alt_label.setText("Alt: --°")
+        except Exception as e:
+            print(f"Error updating mount position display: {e}")
+            self.current_az_label.setText("Az: --°")
+            self.current_alt_label.setText("Alt: --°")
+    
     def calculate_tracking_parameters(self):
         """Calculate bearing, elevation, distance, and celestial coordinates"""
         if self.ground_lat == 0 or self.ground_lon == 0 or self.balloon_lat == 0 or self.balloon_lon == 0:
             return
 
-        # Calculate bearing
-        self.bearing = self.calculate_bearing(self.ground_lat, self.ground_lon, 
-                                            self.balloon_lat, self.balloon_lon)
-
-        # Calculate distance
-        self.distance = self.calculate_distance(self.ground_lat, self.ground_lon,
-                                              self.balloon_lat, self.balloon_lon)
-
-        # Calculate elevation angle
-        if self.distance > 0:
-            # Convert distance to meters and calculate elevation
-            distance_m = self.distance * 1000
-            height_diff = self.balloon_alt - self.ground_alt  # Altitude relative to user
-            self.elevation = math.degrees(math.atan2(height_diff, distance_m))
-        else:
-            self.elevation = 0
-
-        # Update compass
-        self.bearing_compass.setBearing(self.bearing)
+        # Use tracking calculator for all calculations
+        tracking_params = self.tracking_calculator.calculate_tracking_parameters(
+            self.ground_lat, self.ground_lon, self.ground_alt,
+            self.balloon_lat, self.balloon_lon, self.balloon_alt
+        )
+        
+        if tracking_params['valid']:
+            self.bearing = tracking_params['bearing']
+            self.distance = tracking_params['distance']
+            self.elevation = tracking_params['elevation']
+            
+            # Update compass
+            self.bearing_compass.setBearing(self.bearing)
     
     def calculate_bearing(self, lat1, lon1, lat2, lon2):
         """Calculate bearing from point 1 to point 2"""
-        lat1_rad = math.radians(lat1)
-        lat2_rad = math.radians(lat2)
-        dlon_rad = math.radians(lon2 - lon1)
-        
-        y = math.sin(dlon_rad) * math.cos(lat2_rad)
-        x = (math.cos(lat1_rad) * math.sin(lat2_rad) - 
-             math.sin(lat1_rad) * math.cos(lat2_rad) * math.cos(dlon_rad))
-        
-        bearing_rad = math.atan2(y, x)
-        bearing_deg = math.degrees(bearing_rad)
-        
-        return (bearing_deg + 360) % 360
+        return self.tracking_calculator.calculate_bearing(lat1, lon1, lat2, lon2)
     
     def calculate_distance(self, lat1, lon1, lat2, lon2):
         """Calculate distance between two points using Haversine formula"""
-        R = 6371  # Earth's radius in km
-        
-        lat1_rad = math.radians(lat1)
-        lat2_rad = math.radians(lat2)
-        dlat_rad = math.radians(lat2 - lat1)
-        dlon_rad = math.radians(lon2 - lon1)
-        
-        a = (math.sin(dlat_rad/2) * math.sin(dlat_rad/2) +
-             math.cos(lat1_rad) * math.cos(lat2_rad) *
-             math.sin(dlon_rad/2) * math.sin(dlon_rad/2))
-        
-        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
-        
-        return R * c
+        return self.tracking_calculator.calculate_distance(lat1, lon1, lat2, lon2)
     
     def calculate_parameters_for(self, lat, lon, alt):
         """Calculate bearing, elevation and distance for given coordinates."""
-        bearing = self.calculate_bearing(self.ground_lat, self.ground_lon, lat, lon)
-        distance = self.calculate_distance(self.ground_lat, self.ground_lon, lat, lon)
-        if distance > 0:
-            distance_m = distance * 1000
-            height_diff = alt - self.ground_alt
-            elevation = math.degrees(math.atan2(height_diff, distance_m))
-        else:
-            elevation = 0
-        return bearing, elevation, distance
+        return self.tracking_calculator.calculate_parameters_for_position(
+            self.ground_lat, self.ground_lon, self.ground_alt,
+            lat, lon, alt
+        )
     
     def calculate_target_coordinates(self, bearing=None, elevation=None):
         """Calculate target azimuth and altitude for mount tracking"""
@@ -1329,15 +954,8 @@ class TrackingPanel(QWidget):
             print("Target coordinates - No valid GPS data available")
             return None, None  # Return None when no valid data
             
-        # Convert bearing to azimuth (bearing is typically from north, azimuth from north clockwise)
-        azimuth = bearing
-        altitude = elevation
-        
-        # Ensure azimuth is in 0-360 range
-        azimuth = azimuth % 360.0
-        
-        # Ensure altitude is in valid range (-90 to 90)
-        altitude = max(-90.0, min(90.0, altitude))
+        # Use tracking calculator to convert bearing/elevation to mount coordinates
+        azimuth, altitude = self.tracking_calculator.calculate_mount_coordinates(bearing, elevation)
         
         print(f"Target coordinates - Azimuth: {azimuth:.2f}°, Altitude: {altitude:.2f}°")
         
@@ -1377,18 +995,45 @@ class TrackingPanel(QWidget):
         current_az, current_alt = self.get_mount_position()
         if current_az is not None and current_alt is not None:
             mount_status = f"Mount: Az {current_az:.1f}°, Alt {current_alt:.1f}°"
-            if self.mount_at_target:
-                mount_status += " (At Target)"
-            elif self.is_mount_moving():
-                mount_status += " (Moving)"
-            else:
-                mount_status += " (Stationary)"
             
-            # You could add this to a status label if available
-            # self.mount_status_label.setText(mount_status)
+            # Check if mount has reached its target position
+            if (self.last_sent_azimuth is not None and self.last_sent_altitude is not None):
+                az_error = abs(current_az - self.last_sent_azimuth)
+                alt_error = abs(current_alt - self.last_sent_altitude)
+                
+                # Handle azimuth wraparound
+                if az_error > 180:
+                    az_error = 360 - az_error
+                    
+                if az_error <= self.mount_settled_tolerance and alt_error <= self.mount_settled_tolerance:
+                    if not self.mount_at_target:
+                        print(f"Mount reached target position within tolerance (Az±{az_error:.2f}°, Alt±{alt_error:.2f}°)")
+                        self.mount_at_target = True
+                else:
+                    self.mount_at_target = False
+            
+            if self.mount_at_target:
+                mount_status = "At Target"
+            elif self.is_mount_moving():
+                mount_status = "Moving"
+            else:
+                mount_status = "Stationary"
+            
+            # Update the mount status label with detailed information
+            self.mount_status_label.setText(mount_status)
+            
+            # Set color based on status
+            if self.mount_at_target:
+                self.mount_status_label.setStyleSheet("color: #00ff00; margin: 2px;")  # Green for at target
+            elif self.is_mount_moving():
+                self.mount_status_label.setStyleSheet("color: #ffaa00; margin: 2px;")  # Orange for moving
+            else:
+                self.mount_status_label.setStyleSheet("color: #00aaff; margin: 2px;")  # Blue for stationary
             
         else:
             mount_status = "Mount: Position Unknown"
+            self.mount_status_label.setText(mount_status)
+            self.mount_status_label.setStyleSheet("color: #888888; margin: 2px;")  # Gray for unknown
         
         # Update manual mount control display
         if hasattr(self, 'current_az_label') and hasattr(self, 'current_alt_label'):
@@ -1509,7 +1154,7 @@ class TrackingPanel(QWidget):
             # Check if we should send EXPOSURE START message every 20 seconds
             # (at 0, 20, 40 seconds of even minutes)
             if (seconds_in_minute // 10) % 2 == 0:
-                if (self.last_exposure_check == -1 or current_second > (self.last_exposure_check + (self.camera_exposure // 1e6))) and seconds_in_minute != self.last_exposure_check:
+                if (self.last_exposure_check == -1 or current_second > (self.last_exposure_check + (self.camera_controller.exposure // 1e6))) and seconds_in_minute != self.last_exposure_check:
                     print(f"EXPOSURE START {current_second}")
                     self.trigger_camera_capture()
                     # Trigger camera capture
@@ -2020,43 +1665,54 @@ class TrackingPanel(QWidget):
 
     def trigger_camera_capture(self):
         """Trigger camera capture and save image with unique filename asynchronously"""
-
-        def capture():
-            try:
-                if CAMERA_AVAILABLE and camera:
-                    if not self.initialize_camera_for_capture():
-                        print("Failed to initialize camera for capture")
-                        return
-
-                    filename = self.generate_filename()
-                    print(f"Triggering camera capture: {filename}")
-                    print(f"Camera settings - Gain: {self.camera_gain}, Exposure: {self.camera_exposure}μs")
-
-                    RGB_photo(filename, self.camera_gain, self.camera_exposure)
-
-                    print(f"Camera capture completed: {filename}")
-
-                    # UI updates must run on the main thread
-                    QTimer.singleShot(0, lambda: self.update_camera_status(success=True))
-
-                else:
-                    print("Camera not available or not initialized")
-
-            except Exception as e:
-                print(f"Error during camera capture: {e}")
-                QTimer.singleShot(0, lambda: self.update_camera_status(success=False))
-
-        # Start capture in a new thread
-        threading.Thread(target=capture, daemon=True).start()
+        def capture_callback(success, filename):
+            """Callback for when capture completes"""
+            # UI updates must run on the main thread
+            QTimer.singleShot(0, lambda: self.update_camera_status(success=success))
+        
+        try:
+            if self.camera_controller.is_available():
+                filename = self.camera_controller.generate_filename("balloon_tracking")
+                print(f"Triggering camera capture: {filename}")
+                
+                # Get current camera info for logging
+                camera_info = self.camera_controller.get_camera_info()
+                print(f"Camera settings - Gain: {camera_info.get('gain', 'N/A')}, "
+                      f"Exposure: {camera_info.get('exposure_ms', 'N/A')} ms")
+                
+                # Start async capture
+                self.camera_controller.capture_rgb_image_async(filename, capture_callback)
+            else:
+                print("Camera not available or not initialized")
+                self.update_camera_status(success=False)
+                
+        except Exception as e:
+            print(f"Error during camera capture: {e}")
+            self.update_camera_status(success=False)
 
         
     def reset_camera_status(self):
         """Reset camera status display to default"""
         if hasattr(self, 'camera_status_label'):
-            camera_status_text = "AVAILABLE" if CAMERA_AVAILABLE else "NOT AVAILABLE"
-            camera_status_color = "#00ff00" if CAMERA_AVAILABLE else "#ff0000"
+            camera_info = self.camera_controller.get_camera_info()
+            camera_status_text = "AVAILABLE" if camera_info['available'] else "NOT AVAILABLE"
+            camera_status_color = "#00ff00" if camera_info['available'] else "#ff0000"
             self.camera_status_label.setText(camera_status_text)
             self.camera_status_label.setStyleSheet(f"color: {camera_status_color}; margin-bottom: 6px;")
+    
+    def update_camera_status(self, success=True):
+        """Update camera status display after capture"""
+        if hasattr(self, 'camera_status_label'):
+            if success:
+                self.camera_status_label.setText("CAPTURE OK")
+                self.camera_status_label.setStyleSheet("color: #00ff00; margin-bottom: 6px;")
+                # Reset after 3 seconds
+                QTimer.singleShot(3000, self.reset_camera_status)
+            else:
+                self.camera_status_label.setText("CAPTURE FAILED")
+                self.camera_status_label.setStyleSheet("color: #ff0000; margin-bottom: 6px;")
+                # Reset after 5 seconds
+                QTimer.singleShot(5000, self.reset_camera_status)
     
     def safe_slew_azalt(self, azimuth, altitude):
         """Safely slew mount to azimuth/altitude position with smart positioning"""
@@ -2101,7 +1757,7 @@ class TrackingPanel(QWidget):
     
     def manual_goto_position(self):
         """Handle manual goto position button click"""
-        if not self.mount:
+        if not self.mount_connected:
             QMessageBox.warning(self, "Mount Error", "Mount not connected!")
             return
         
@@ -2122,8 +1778,6 @@ class TrackingPanel(QWidget):
         self.reset_button.setEnabled(False)
         
         try:
-            # Force new position to bypass tolerance checking
-            self.force_new_position = True
             print(f"Manual command: Moving mount to Az={azimuth:.2f}°, Alt={altitude:.2f}°")
             
             # Use the retry method (now asynchronous)
@@ -2147,6 +1801,38 @@ class TrackingPanel(QWidget):
             
         # Update display after a short delay to allow mount to start moving
         QTimer.singleShot(500, self.update_mount_position_display)
+    
+    def reconnect_mount_with_feedback(self):
+        """Reconnect to mount with user feedback"""
+        try:
+            current_port = self.mount_controller.get_current_port()
+            print(f"Reconnecting to mount on {current_port}...")
+            
+            # Disable button during reconnection
+            self.reconnect_mount_button.setEnabled(False)
+            self.reconnect_mount_button.setText("Connecting...")
+            
+            # Reconnect
+            success = self.reconnect_mount()
+            
+            if success:
+                QMessageBox.information(self, "Mount Connection", f"Successfully connected to mount on {current_port}")
+                print(f"✓ Mount reconnected successfully on {current_port}")
+            else:
+                QMessageBox.warning(self, "Mount Connection", f"Failed to connect to mount on {current_port}. Check port and mount power.")
+                print(f"✗ Mount reconnection failed on {current_port}")
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Mount Error", f"Error during reconnection: {str(e)}")
+            print(f"Error during mount reconnection: {e}")
+        finally:
+            # Re-enable button
+            self.reconnect_mount_button.setEnabled(True)
+            self.reconnect_mount_button.setText("Reconnect Mount")
+            self.update_manual_control_states()
+            
+            # Update position display
+            QTimer.singleShot(500, self.update_mount_position_display)
     
     def safe_slew_azalt_with_retry(self, azimuth, altitude, max_retries=2):
         """Safe slewing with retry logic for manual commands (asynchronous)"""
@@ -2190,7 +1876,7 @@ class TrackingPanel(QWidget):
     
     def reset_mount_position(self):
         """Reset mount to home position (0°, 0°)"""
-        if not self.mount:
+        if not self.mount_connected:
             QMessageBox.warning(self, "Mount Error", "Mount not connected!")
             return
         
@@ -2209,8 +1895,6 @@ class TrackingPanel(QWidget):
                 self.manual_az_spin.setValue(0.0)
                 self.manual_alt_spin.setValue(0.0)
                 
-                # Force new position to bypass tolerance checking
-                self.force_new_position = True
                 print("Manual command: Resetting mount to home position (0°, 0°)")
                 
                 # Use the retry method (now asynchronous)
@@ -2234,107 +1918,6 @@ class TrackingPanel(QWidget):
             
             # Update display after a short delay
             QTimer.singleShot(500, self.update_mount_position_display)
-    
-    def update_mount_position_display(self):
-        """Update the current position display"""
-        # Check if GUI elements exist (in case called during initialization)
-        if not hasattr(self, 'current_az_label'):
-            return
-            
-        if not self.mount:
-            self.current_az_label.setText("Az: --°")
-            self.current_alt_label.setText("Alt: --°")
-            self.mount_status_label.setText("Disconnected")
-            self.mount_status_label.setStyleSheet("color: #ff4444; margin: 2px;")
-            return
-        
-        try:
-            # Get current position from mount with timeout protection
-            current_az, current_alt = self.get_mount_position()
-            
-            if current_az is not None and current_alt is not None:
-                # Update labels
-                self.current_az_label.setText(f"Az: {current_az:.2f}°")
-                self.current_alt_label.setText(f"Alt: {current_alt:.2f}°")
-                
-                # Check if mount is slewing (with error protection)
-                try:
-                    is_slewing = self.is_mount_moving()
-                    if is_slewing:
-                        self.mount_status_label.setText("Slewing...")
-                        self.mount_status_label.setStyleSheet("color: #ffaa00; margin: 2px;")
-                    else:
-                        self.mount_status_label.setText("Ready")
-                        self.mount_status_label.setStyleSheet("color: #00ff00; margin: 2px;")
-                except:
-                    # If we can't check slewing status, just show position
-                    self.mount_status_label.setText("Position OK")
-                    self.mount_status_label.setStyleSheet("color: #00ff00; margin: 2px;")
-            else:
-                self.current_az_label.setText("Az: Error")
-                self.current_alt_label.setText("Alt: Error")
-                self.mount_status_label.setText("Comm Error")
-                self.mount_status_label.setStyleSheet("color: #ff4444; margin: 2px;")
-                
-        except Exception as e:
-            print(f"Error getting mount position (non-critical): {e}")
-            self.current_az_label.setText("Az: Timeout")
-            self.current_alt_label.setText("Alt: Timeout")
-            self.mount_status_label.setText("Timeout")
-            self.mount_status_label.setStyleSheet("color: #ff4444; margin: 2px;")
-    
-    def reconnect_mount_with_feedback(self):
-        """Reconnect to mount with user feedback"""
-        try:
-            current_port = self.get_current_mount_port()
-            print(f"Reconnecting to mount on {current_port}...")
-            
-            # Disable button during reconnection
-            self.reconnect_mount_button.setEnabled(False)
-            self.reconnect_mount_button.setText("Connecting...")
-            
-            # Reconnect
-            success = self.reconnect_mount()
-            
-            if success:
-                QMessageBox.information(self, "Mount Connection", f"Successfully connected to mount on {current_port}")
-                print(f"✓ Mount reconnected successfully on {current_port}")
-            else:
-                QMessageBox.warning(self, "Mount Connection", f"Failed to connect to mount on {current_port}. Check port and mount power.")
-                print(f"✗ Mount reconnection failed on {current_port}")
-                
-        except Exception as e:
-            QMessageBox.critical(self, "Mount Error", f"Error during reconnection: {str(e)}")
-            print(f"Error during mount reconnection: {e}")
-        finally:
-            # Re-enable button
-            self.reconnect_mount_button.setEnabled(True)
-            self.reconnect_mount_button.setText("Reconnect Mount")
-            self.update_manual_control_states()
-            
-            # Update position display
-            QTimer.singleShot(500, self.update_mount_position_display)
-    
-    def update_precision_mode_text(self):
-        """Update the precision mode button text to reflect current state"""
-        if self.precision_checkbox.isChecked():
-            self.precision_checkbox.setText("Precision Mode")
-        else:
-            self.precision_checkbox.setText("Fast Mode")
-    
-    def toggle_control_mode(self):
-        """Toggle between manual and automatic tracking mode"""
-        self.manual_control_mode = self.mode_toggle_button.isChecked()
-        
-        if self.manual_control_mode:
-            self.mode_toggle_button.setText("Manual Control")
-            print("Switched to MANUAL control mode - balloon tracking disabled")
-        else:
-            self.mode_toggle_button.setText("Auto Tracking")
-            print("Switched to AUTO TRACKING mode - balloon tracking enabled")
-        
-        # Update button states
-        self.update_manual_control_states()
     
     def update_precision_mode_text(self):
         """Update the precision mode button text based on current state"""
@@ -2373,3 +1956,17 @@ class TrackingPanel(QWidget):
                         background-color: #7a5a5a;
                     }
                 """)
+    
+    def toggle_control_mode(self):
+        """Toggle between manual and automatic tracking mode"""
+        self.manual_control_mode = self.mode_toggle_button.isChecked()
+        
+        if self.manual_control_mode:
+            self.mode_toggle_button.setText("Manual Control")
+            print("Switched to MANUAL control mode - balloon tracking disabled")
+        else:
+            self.mode_toggle_button.setText("Auto Tracking")
+            print("Switched to AUTO TRACKING mode - balloon tracking enabled")
+        
+        # Update button states
+        self.update_manual_control_states()
