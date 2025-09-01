@@ -260,7 +260,7 @@ class TrackingPanel(QWidget):
         self.last_sent_azimuth = None
         self.last_sent_altitude = None
         self.position_tolerance = 0.5  # degrees - minimum change required to send new position
-        self.mount_settled_tolerance = 1.0  # degrees - tolerance for considering mount "at target"
+        self.mount_settled_tolerance = 0.2  # degrees - tolerance for considering mount "at target"
         self.mount_at_target = False
         
         # Manual mount control mode
@@ -646,8 +646,8 @@ class TrackingPanel(QWidget):
     def force_new_position(self, azimuth, altitude):
         """Force the mount to move to a new position regardless of tolerances"""
         print(f"Force positioning to Az={azimuth:.2f}°, Alt={altitude:.2f}°")
-        self.last_sent_azimuth = None  # Reset to force movement
-        self.last_sent_altitude = None
+        self.last_sent_azimuth = azimuth  # Reset to force movement
+        self.last_sent_altitude = altitude
         self.safe_slew_azalt(azimuth, altitude)
     
     def setup_ui(self):
@@ -875,8 +875,12 @@ class TrackingPanel(QWidget):
         # Add target mount coordinates
         try:
             target_az, target_alt = self.calculate_target_coordinates()
-            data['target_azimuth'] = f'{target_az:.2f}'
-            data['target_altitude'] = f'{target_alt:.2f}'
+            if target_az is not None and target_alt is not None:
+                data['target_azimuth'] = f'{target_az:.2f}'
+                data['target_altitude'] = f'{target_alt:.2f}'
+            else:
+                data['target_azimuth'] = 'No GPS'
+                data['target_altitude'] = 'No GPS'
             
             # Add current mount position if available
             current_az, current_alt = self.get_mount_position()
@@ -1189,35 +1193,10 @@ class TrackingPanel(QWidget):
         layout.addWidget(camera_frame)
 
         #Add toggle button for telescope slewing mode tracking/predicting
-        # self.slew_toggle_button = QPushButton("Toggle Slew Mode")
-        # self.slew_toggle_button.setStyleSheet("""
-        #     QPushButton {
-        #         background-color: #3a3a3a;
-        #         color: #ffffff;
-        #         border: 1px solid #555555;
-        #         border-radius: 4px;
-        #         padding: 6px 12px;
-        #         font-weight: bold;
-        #     }
-        #     QPushButton:hover {
-        #         background-color: #4a4a4a;
-        #     }
-        #     QPushButton:pressed {
-        #         background-color: #2a2a2a;
-        #     }
-        # """)
-        # self.slew_toggle_button.clicked.connect(self.toggle_slew_mode)
-        # layout.addWidget(self.slew_toggle_button)
-
+        # Removed - functionality replaced by manual control mode toggle
         
         return group
     
-    # def toggle_slew_mode(self):
-    #     self.tracking_enabled = not self.tracking_enabled
-    #     self.slew_toggle_button.setText(
-    #         "Tracking ON" if self.tracking_enabled else "Tracking OFF"
-    #     )
-
     def add_parameter_display(self, layout, label_text, value_attr, default_value, row):
         """Add a parameter display to the layout"""
         label = QLabel(label_text)
@@ -1344,6 +1323,11 @@ class TrackingPanel(QWidget):
             bearing = self.bearing
         if elevation is None:
             elevation = self.elevation
+        
+        # Check if we have valid tracking data
+        if (self.balloon_lat == 0 and self.balloon_lon == 0) or (self.ground_lat == 0 and self.ground_lon == 0):
+            print("Target coordinates - No valid GPS data available")
+            return None, None  # Return None when no valid data
             
         # Convert bearing to azimuth (bearing is typically from north, azimuth from north clockwise)
         azimuth = bearing
@@ -1373,10 +1357,14 @@ class TrackingPanel(QWidget):
         # Calculate target azimuth/altitude for mount
         if self.tracking_enabled:
             target_az, target_alt = self.calculate_target_coordinates()
+            if target_az is None or target_alt is None:
+                target_az, target_alt = 0.0, 0.0  # Default for display only
         else:
             # Use predicted coordinates
             pb, pe, _ = self.calculate_parameters_for(self.pred_lat, self.pred_lon, self.pred_alt)
             target_az, target_alt = self.calculate_target_coordinates(pb, pe)
+            if target_az is None or target_alt is None:
+                target_az, target_alt = 0.0, 0.0  # Default for display only
             self.pred_bearing_label.setText(f"{pb:.1f}°")  
 
         # Update coordinate displays (using azimuth/altitude instead of RA/DEC)
@@ -1444,10 +1432,20 @@ class TrackingPanel(QWidget):
         # Update LED status based on UTC time (after other status updates)
         self.update_led_status()
 
-        # Move mount to target position (throttled to every 5 seconds) - only in auto tracking mode
-        if not self.manual_control_mode and time.time() - self.last_pred_slew_time >= 5:
+        # Move mount to target position (throttled to every 15 seconds) - only in auto tracking mode
+        # Only move if we have valid tracking data (non-zero coordinates)
+        if (not self.manual_control_mode and 
+            time.time() - self.last_pred_slew_time >= 15 and
+            self.balloon_lat != 0 and self.balloon_lon != 0 and 
+            self.ground_lat != 0 and self.ground_lon != 0 and
+            target_az is not None and target_alt is not None):
+            print(f"DEBUG: Moving mount to target position - Az: {target_az}, Alt: {target_alt}")
             self.safe_slew_azalt(target_az, target_alt)
             self.last_pred_slew_time = time.time()
+        elif not self.manual_control_mode and (self.balloon_lat == 0 or self.balloon_lon == 0 or self.ground_lat == 0 or self.ground_lon == 0):
+            print("DEBUG: Skipping mount movement - waiting for valid GPS coordinates")
+        elif not self.manual_control_mode and (target_az is None or target_alt is None):
+            print("DEBUG: Skipping mount movement - invalid target coordinates")
 
     def update_status_indicators(self):
         """Update status indicators based on system state"""
@@ -2086,14 +2084,6 @@ class TrackingPanel(QWidget):
                 self.slew_in_progress = False  # Mark slew as done
 
         threading.Thread(target=threaded_slew, daemon=True).start()
-
-    def safe_slew(self, ra_hour, dec_deg):
-        """Legacy method - redirects to azimuth/altitude slewing"""
-        # Convert RA/DEC to approximate azimuth/altitude for compatibility
-        # This is a simplified conversion - real conversion would require time/location
-        azimuth = ra_hour * 15.0  # Very rough approximation
-        altitude = dec_deg
-        self.safe_slew_azalt(azimuth, altitude)
 
     def set_tracking_enabled(self, enabled:bool):
         self.tracking_enabled = bool(enabled)

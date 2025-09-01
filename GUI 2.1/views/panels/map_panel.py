@@ -55,7 +55,7 @@ MAP_HTML = """
             opacity: 0.7
         }).addTo(map);
         
-        var followMarker = true;
+        var followMarker = false;  // Disable auto-follow by default
         var coordinates = [];
         
         function updateMarker(lat, lon) {
@@ -163,6 +163,7 @@ class MapPanel(QWidget):
         
         # Connect signals from models/controllers
         self.telemetry_model.position_updated.connect(self.update_vehicle_marker)
+        self.telemetry_model.ground_station_gps_updated.connect(self.update_ground_station_gps)
         self.map_controller.user_location_changed.connect(self.update_user_marker)
 
     def setup_ui(self):
@@ -172,17 +173,28 @@ class MapPanel(QWidget):
         # Map controls
         map_controls_layout = QHBoxLayout()
         
-        self.gps_label = QLabel("GPS: No Fix")
+        # Vehicle GPS info
+        self.gps_label = QLabel("Vehicle GPS: No Fix")
         self.gps_label.setStyleSheet(
             "background-color: #2a2a2a; color: #ff6b6b; padding: 8px 12px; "
             "border: 1px solid #3a3a3a; border-radius: 6px; font-family: 'Courier New'; "
             "font-size: 10pt; font-weight: bold; min-width: 280px;"
         )
         map_controls_layout.addWidget(self.gps_label)
+        
+        # Ground Station GPS info
+        self.gs_gps_label = QLabel("Ground Station GPS: No Fix")
+        self.gs_gps_label.setStyleSheet(
+            "background-color: #2a2a2a; color: #ff6b6b; padding: 8px 12px; "
+            "border: 1px solid #3a3a3a; border-radius: 6px; font-family: 'Courier New'; "
+            "font-size: 10pt; font-weight: bold; min-width: 280px;"
+        )
+        map_controls_layout.addWidget(self.gs_gps_label)
+        
         map_controls_layout.addStretch()
         
         self.follow_marker_checkbox = QCheckBox("Lock on Vehicle")
-        self.follow_marker_checkbox.setChecked(True)
+        self.follow_marker_checkbox.setChecked(False)  # Disable auto-follow by default
         self.follow_marker_checkbox.stateChanged.connect(self.toggle_map_follow)
         map_controls_layout.addWidget(self.follow_marker_checkbox)
         
@@ -241,9 +253,9 @@ class MapPanel(QWidget):
                 js_code = f"updateUserMarker({self.user_lat}, {self.user_lon});"
                 self.map_view.page().runJavaScript(js_code)
                 
-                # Center map on user's location initially
-                js_code = f"map.setView([{self.user_lat}, {self.user_lon}], 13);"
-                self.map_view.page().runJavaScript(js_code)
+                # No longer automatically center map - let user control this
+                # js_code = f"map.setView([{self.user_lat}, {self.user_lon}], 13);"
+                # self.map_view.page().runJavaScript(js_code)
                 
             except Exception as e:
                 print(f"MapPanel: Error setting user marker: {e}")
@@ -272,8 +284,34 @@ class MapPanel(QWidget):
                 "font-size: 10pt; font-weight: bold; min-width: 280px;"
             )
         else:
-            self.gps_label.setText("GPS: No Fix / Invalid Data")
+            self.gps_label.setText("Vehicle GPS: No Fix / Invalid Data")
             self.gps_label.setStyleSheet(
+                "background-color: #2a2a2a; color: #ff6b6b; padding: 8px 12px; "
+                "border: 1px solid #3a3a3a; border-radius: 6px; font-family: 'Courier New'; "
+                "font-size: 10pt; font-weight: bold; min-width: 280px;"
+            )
+
+    def update_ground_station_gps(self, lat, lon, alt):
+        """Update ground station GPS information display"""
+        if lat != 0 and lon != 0:  # Only update if we have valid coordinates
+            # Format coordinates with cardinal directions
+            lat_direction = "N" if lat >= 0 else "S"
+            lon_direction = "E" if lon >= 0 else "W"
+            
+            # Update display text
+            self.gs_gps_label.setText(
+                f"Ground Station: {abs(lat):.5f}°{lat_direction}, {abs(lon):.5f}°{lon_direction} | Alt: {alt:.1f}m"
+            )
+            # Green background for valid GPS
+            self.gs_gps_label.setStyleSheet(
+                "background-color: #2a2a2a; color: #00ff00; padding: 8px 12px; "
+                "border: 1px solid #3a3a3a; border-radius: 6px; font-family: 'Courier New'; "
+                "font-size: 10pt; font-weight: bold; min-width: 280px;"
+            )
+        else:
+            self.gs_gps_label.setText("Ground Station GPS: No Fix / Invalid Data")
+            # Red background for no GPS fix
+            self.gs_gps_label.setStyleSheet(
                 "background-color: #2a2a2a; color: #ff6b6b; padding: 8px 12px; "
                 "border: 1px solid #3a3a3a; border-radius: 6px; font-family: 'Courier New'; "
                 "font-size: 10pt; font-weight: bold; min-width: 280px;"
