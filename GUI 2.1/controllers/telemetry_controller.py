@@ -18,8 +18,8 @@ class TelemetryController(QObject):
         self.gps_simulation = False
         self.sim_timer = QTimer()
         self.sim_timer.timeout.connect(self.update_sim_gps)
-        self.sim_lat = 45.505623
-        self.sim_lon = -73.575737
+        self.sim_lat = 45.5066716
+        self.sim_lon = -73.5767950
         self.sim_alt = 150
         self.sim_angle = 0
         self.sim_vertical_speed = 0
@@ -206,6 +206,7 @@ class TelemetryController(QObject):
     
     def update_sim_gps(self):
         """Update simulated GPS position"""
+        # return
         if not self.gps_simulation:
             return
             
@@ -219,8 +220,10 @@ class TelemetryController(QObject):
         # Calculate new position
         lat_change = math.cos(math.radians(self.sim_angle)) * 0.0001
         lon_change = math.sin(math.radians(self.sim_angle)) * 0.0001
-        self.sim_lat += lat_change
-        self.sim_lon += lon_change
+        # self.sim_lat += lat_change
+        # self.sim_lon += lon_change
+        self.sim_lat = 45.5073150
+        self.sim_lon = -73.5795037
         
         # Update vertical speed with random changes
         self.sim_vertical_speed += random.uniform(-0.5, 0.5)
@@ -276,7 +279,8 @@ class TelemetryController(QObject):
             gps_data = {
                 'lat': float(values[0]),
                 'lon': float(values[1]),
-                'alt': float(values[2]),
+                # 'alt': float(values[2]),
+                'alt': float(0),
                 'hdop': float(values[3]),
                 'vdop': float(values[4]),
                 'utc_unix': int(values[5]),
