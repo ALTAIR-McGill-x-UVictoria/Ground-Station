@@ -971,8 +971,8 @@ class TrackingPanel(QWidget):
         # Observer location (your ground station)
         observer = EarthLocation(lat=self.ground_lat*u.deg, lon=self.ground_lon*u.deg, height=self.ground_alt*u.m)
         # local_dt = self.get_current_utc_time().toPyDateTime()
-        if hasattr(self.telemetry_model, gs+)
-        time = Time(self.telemetry_model.gs_gps_utc_unix, format='unix')
+        if hasattr(self.telemetry_model, 'gs_gps_utc_unix'):
+            time = Time(self.telemetry_model.gs_gps_utc_unix, format='unix')
         if bearing is None:
             bearing = self.bearing
         if elevation is None:
